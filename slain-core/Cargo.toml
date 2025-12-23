@@ -1,0 +1,55 @@
+[package]
+name = "slain-core"
+description = "SLAIN Core - Pure Rust GPU-accelerated video player"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+default = ["software-decode"]
+software-decode = []
+cuda = []
+avisynth = []
+vapoursynth = []
+vulkan-compute = []
+
+[dependencies]
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Concurrency
+parking_lot.workspace = true
+tokio.workspace = true
+once_cell = "1.19"
+
+# Hardware access
+libloading.workspace = true
+
+# Graphics
+wgpu.workspace = true
+pollster.workspace = true
+bytemuck.workspace = true
+
+# Audio
+symphonia.workspace = true
+cpal.workspace = true
+rubato.workspace = true
+ringbuf = "0.4"
+
+# Image processing
+image.workspace = true
+
+# Compression
+flate2 = "1.0"
+
+# URL parsing
+url = "2.5"

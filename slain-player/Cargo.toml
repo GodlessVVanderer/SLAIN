@@ -1,0 +1,47 @@
+[package]
+name = "slain-player"
+description = "SLAIN Video Player - Pure Rust GPU-accelerated playback"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slain"
+path = "src/main.rs"
+
+[features]
+default = ["quad-pipeline"]
+quad-pipeline = ["slain-core/cuda", "slain-core/avisynth", "slain-core/vapoursynth", "slain-core/vulkan-compute"]
+
+[dependencies]
+# Core library
+slain-core = { path = "../slain-core", features = ["software-decode"] }
+
+# Workspace shared
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+
+# GUI
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+egui-wgpu.workspace = true
+
+# Graphics
+wgpu.workspace = true
+pollster.workspace = true
+bytemuck.workspace = true
+
+# Windowing
+winit.workspace = true
+raw-window-handle.workspace = true
+
+# File dialogs
+rfd = "0.15"

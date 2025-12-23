@@ -1,0 +1,86 @@
+[workspace]
+resolver = "2"
+members = [
+    "slain-core",
+    "slain-player", 
+    "slain-mcp",
+]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+authors = ["Josh"]
+license = "MIT"
+repository = "https://github.com/josh/slain"
+
+[workspace.dependencies]
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Concurrency
+tokio = { version = "1.40", features = ["full"] }
+parking_lot = "0.12"
+once_cell = "1.19"
+
+# GPU / Hardware (dynamic loading)
+libloading = "0.8"
+raw-window-handle = "0.6"
+
+# Graphics / Rendering
+wgpu = "23.0"
+pollster = "0.4"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# GUI (egui)
+eframe = { version = "0.29", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "persistence",
+    "wgpu",
+] }
+egui = "0.29"
+egui_extras = { version = "0.29", features = ["image"] }
+egui-wgpu = "0.29"
+
+# Windowing
+winit = "0.30"
+
+# Video Decoding - Software
+openh264 = "0.6"
+dav1d = "0.10"
+
+# Audio
+symphonia = { version = "0.5", features = ["all"] }
+cpal = "0.15"
+rubato = "0.15"
+ringbuf = "0.4"
+
+# Image processing
+image = "0.25"
+
+# Compression
+flate2 = "1.0"
+
+# URL/Network
+url = "2.5"
+
+# MCP
+async-trait = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
