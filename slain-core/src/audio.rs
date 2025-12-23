@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use ringbuf::traits::Observer;
 use symphonia::core::audio::{AudioBufferRef, Signal, SampleBuffer};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
@@ -58,24 +59,30 @@ pub enum PlaybackState {
     Paused,
 }
 
-pub struct AudioPlayer {
+// AudioPlayer state that is Send + Sync
+pub struct AudioPlayerState {
     // Playback state
     state: Arc<Mutex<PlaybackState>>,
     playing: Arc<AtomicBool>,
     position_samples: Arc<AtomicU64>,
     sample_rate: Arc<AtomicU64>,
-    
-    // Audio stream
-    stream: Option<Stream>,
-    
-    // Ring buffer for decoded audio
-    producer: Option<ringbuf::HeapProd<f32>>,
-    
-    // Decode thread handle
-    decode_thread: Option<thread::JoinHandle<()>>,
-    
+
     // Volume (0.0 - 1.0)
     volume: Arc<Mutex<f32>>,
+}
+
+// Full player with stream (not Send due to cpal::Stream)
+pub struct AudioPlayer {
+    inner: AudioPlayerState,
+
+    // Audio stream (not Send/Sync - kept out of global static)
+    stream: Option<Stream>,
+
+    // Ring buffer for decoded audio
+    producer: Option<ringbuf::HeapProd<f32>>,
+
+    // Decode thread handle
+    decode_thread: Option<thread::JoinHandle<()>>,
 }
 
 // ============================================================================
@@ -102,7 +109,7 @@ pub fn get_audio_info<P: AsRef<Path>>(path: P) -> Result<AudioInfo, String> {
         .format(&hint, mss, &fmt_opts, &meta_opts)
         .map_err(|e| format!("Failed to probe file: {}", e))?;
     
-    let format = probed.format;
+    let mut format = probed.format;
     
     // Find first audio track
     let track = format
@@ -560,11 +567,12 @@ pub fn seek_audio<P: AsRef<Path>>(
 // Global Player Instance
 // ============================================================================
 
-use once_cell::sync::Lazy;
+use std::cell::RefCell;
 
-static AUDIO_PLAYER: Lazy<Mutex<AudioPlayer>> = Lazy::new(|| {
-    Mutex::new(AudioPlayer::new())
-});
+// Use thread-local for AudioPlayer since cpal::Stream is not Send/Sync
+thread_local! {
+    static AUDIO_PLAYER: RefCell<AudioPlayer> = RefCell::new(AudioPlayer::new());
+}
 
 // ============================================================================
 // Tauri Commands

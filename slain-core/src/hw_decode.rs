@@ -383,7 +383,7 @@ impl HwDecoder {
                     max_surfaces: 8,
                 }
             }
-            Self::Software(d) => d.info.clone(),
+            Self::Software(d) => d.info().clone(),
         }
     }
     

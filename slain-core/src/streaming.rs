@@ -551,9 +551,9 @@ impl StreamConfig {
 use std::process::{Child, Command, Stdio};
 use parking_lot::Mutex;
 
-lazy_static::lazy_static! {
-    static ref RTMP_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
-}
+use once_cell::sync::Lazy;
+
+static RTMP_PROCESS: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
 
 pub struct RtmpStreamer {
     config: StreamConfig,
@@ -627,9 +627,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::thread;
 
-lazy_static::lazy_static! {
-    static ref LOCAL_SERVER: Mutex<Option<LocalServerHandle>> = Mutex::new(None);
-}
+static LOCAL_SERVER: Lazy<Mutex<Option<LocalServerHandle>>> = Lazy::new(|| Mutex::new(None));
 
 struct LocalServerHandle {
     port: u16,
@@ -791,9 +789,7 @@ pub async fn discover_cast_devices() -> Result<Vec<CastDevice>, String> {
     Ok(devices)
 }
 
-lazy_static::lazy_static! {
-    static ref CAST_DEVICES: Mutex<HashMap<String, CastDevice>> = Mutex::new(HashMap::new());
-}
+static CAST_DEVICES: Lazy<Mutex<HashMap<String, CastDevice>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 
 pub async fn cast_to_device(device_id: String, video_url: String) -> Result<(), String> {

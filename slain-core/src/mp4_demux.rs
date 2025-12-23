@@ -913,7 +913,7 @@ pub mod mp4 {
         pub fn seek(&mut self, timestamp_us: i64) -> Result<(), String> {
             for track in &mut self.tracks {
                 // Find closest keyframe before timestamp
-                let target_sample = self.find_sample_for_time(track, timestamp_us);
+                let target_sample = Self::find_sample_for_time_static(track, timestamp_us);
                 
                 if !track.sample_table.keyframes.is_empty() {
                     // Find nearest keyframe at or before target
@@ -934,7 +934,7 @@ pub mod mp4 {
             Ok(())
         }
 
-        fn find_sample_for_time(&self, track: &Track, timestamp_us: i64) -> usize {
+        fn find_sample_for_time_static(track: &Track, timestamp_us: i64) -> usize {
             let target_time = timestamp_us * (track.timescale as i64) / 1_000_000;
             
             let mut time = 0i64;

@@ -639,6 +639,7 @@ impl MuxMcpServer {
     
     fn handle_probe(&self, params: Option<serde_json::Value>) -> Result<serde_json::Value, McpError> {
         let max_parallel = params
+            .as_ref()
             .and_then(|p| p.get("max_parallel"))
             .and_then(|v| v.as_u64())
             .unwrap_or(4) as usize;

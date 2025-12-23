@@ -294,7 +294,7 @@ fn detect_amd_gpus() -> Option<Vec<GpuDevice>> {
 
 fn detect_gpus_vulkan() -> Vec<GpuDevice> {
     // Use wgpu to enumerate adapters (already in our deps)
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });
@@ -737,7 +737,7 @@ pub fn set_secondary_gpu_power(low_power: bool) {
         // On Windows, would use DXGI to set power preference
         // On Linux, would write to sysfs
         
-        log::info!(
+        tracing::info!(
             "Setting secondary GPU {} to {} power mode",
             secondary_id,
             if low_power { "low" } else { "normal" }

@@ -1243,10 +1243,10 @@ impl MkvParser {
 // Attachment Extraction
 // ============================================================================
 
-pub fn extract_attachment<P: AsRef<Path>>(
+pub fn extract_attachment<P: AsRef<Path>, Q: AsRef<Path>>(
     mkv_path: P,
     attachment: &MkvAttachment,
-    output_dir: P,
+    output_dir: Q,
 ) -> Result<ExtractedAttachment, String> {
     let mkv_path = mkv_path.as_ref();
     let output_dir = output_dir.as_ref();

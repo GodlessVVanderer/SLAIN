@@ -347,7 +347,7 @@ fn load_nvdec_libraries() -> Option<&'static NvdecLibraries> {
                 let cuda_lib = match libloading::Library::new(&cuda_path) {
                     Ok(lib) => lib,
                     Err(e) => {
-                        log::warn!("Failed to load CUDA library {}: {}", cuda_path, e);
+                        tracing::warn!("Failed to load CUDA library {}: {}", cuda_path, e);
                         return None;
                     }
                 };
@@ -355,7 +355,7 @@ fn load_nvdec_libraries() -> Option<&'static NvdecLibraries> {
                 let cuvid_lib = match libloading::Library::new(&cuvid_path) {
                     Ok(lib) => lib,
                     Err(e) => {
-                        log::warn!("Failed to load CUVID library {}: {}", cuvid_path, e);
+                        tracing::warn!("Failed to load CUVID library {}: {}", cuvid_path, e);
                         return None;
                     }
                 };
@@ -387,11 +387,11 @@ fn load_nvdec_libraries() -> Option<&'static NvdecLibraries> {
                 // Initialize CUDA
                 let result = cu_init(0);
                 if result != CUDA_SUCCESS {
-                    log::warn!("cuInit failed with error {}", result);
+                    tracing::warn!("cuInit failed with error {}", result);
                     return None;
                 }
                 
-                log::info!("NVDEC libraries loaded successfully");
+                tracing::info!("NVDEC libraries loaded successfully");
                 
                 Some(NvdecLibraries {
                     _cuda_lib: cuda_lib,
@@ -534,7 +534,7 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
         let state = &mut *(user_data as *mut DecoderState);
         let fmt = &*format;
         
-        log::info!("NVDEC sequence: {}x{}, codec {:?}, surfaces {}",
+        tracing::info!("NVDEC sequence: {}x{}, codec {:?}, surfaces {}",
             fmt.coded_width, fmt.coded_height, fmt.codec, fmt.min_num_decode_surfaces);
         
         // Destroy existing decoder
@@ -583,7 +583,7 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
         
         let result = (state.libs.cuvid_create_decoder)(&mut state.decoder, &mut create_info);
         if result != CUDA_SUCCESS {
-            log::error!("cuvidCreateDecoder failed: {}", result);
+            tracing::error!("cuvidCreateDecoder failed: {}", result);
             return 0;
         }
         
@@ -606,7 +606,7 @@ extern "C" fn decode_callback(user_data: *mut c_void, pic_params: *mut CuvidPicP
         
         let result = (state.libs.cuvid_decode_picture)(state.decoder, pic_params);
         if result != CUDA_SUCCESS {
-            log::error!("cuvidDecodePicture failed: {}", result);
+            tracing::error!("cuvidDecodePicture failed: {}", result);
             return 0;
         }
         
@@ -761,7 +761,7 @@ impl NvdecDecoder {
                 return Err(format!("cuvidCreateVideoParser failed: {}", result));
             }
             
-            log::info!("NVDEC decoder created for {:?} {}x{}", codec, width, height);
+            tracing::info!("NVDEC decoder created for {:?} {}x{}", codec, width, height);
             
             Ok(Self { libs, ctx, parser, state, codec })
         }

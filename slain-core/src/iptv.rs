@@ -200,7 +200,7 @@ pub fn parse_xmltv(content: &str) -> Result<EpgData, String> {
 }
 
 /// Get current program for a channel
-pub fn get_current_program(epg: &EpgData, channel_id: &str) -> Option<&EpgProgram> {
+pub fn get_current_program<'a>(epg: &'a EpgData, channel_id: &str) -> Option<&'a EpgProgram> {
     let now = chrono::Utc::now().timestamp();
     
     epg.channels.get(channel_id)?
@@ -209,7 +209,7 @@ pub fn get_current_program(epg: &EpgData, channel_id: &str) -> Option<&EpgProgra
 }
 
 /// Get upcoming programs for a channel
-pub fn get_upcoming_programs(epg: &EpgData, channel_id: &str, limit: usize) -> Vec<&EpgProgram> {
+pub fn get_upcoming_programs<'a>(epg: &'a EpgData, channel_id: &str, limit: usize) -> Vec<&'a EpgProgram> {
     let now = chrono::Utc::now().timestamp();
     
     epg.channels.get(channel_id)

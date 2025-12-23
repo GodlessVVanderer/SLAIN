@@ -34,12 +34,16 @@ pub mod mkv;
 pub mod avi_demux;
 pub mod ts_demux;
 pub mod mp4_demux;
+pub mod lav;  // LAV Filters replacement (splitter + decoders)
 
 // ============================================================================
 // Media Processing
 // ============================================================================
 pub mod audio;
 pub mod pixel_convert;
+pub mod gpu_video_processor;
+pub mod frame_queue;
+pub mod video_filters;
 pub mod subtitles;
 pub mod imaging;
 
@@ -76,12 +80,19 @@ pub mod forumyze;
 pub mod cosmic_movie;
 pub mod starlight;
 pub mod block_mirror;
+pub mod fractal;
 
 // ============================================================================
 // Stubs (to be implemented)
 // ============================================================================
 pub mod render;
 pub mod sync;
+
+// ============================================================================
+// Benchmarking
+// ============================================================================
+pub mod benchmark;
+pub mod gpu_benchmark;
 
 // ============================================================================
 // Version

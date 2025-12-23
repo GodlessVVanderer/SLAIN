@@ -245,7 +245,7 @@ fn load_vaapi_library() -> Option<&'static VaapiLibrary> {
                 let libva = match libloading::Library::new(libva_path) {
                     Ok(lib) => lib,
                     Err(e) => {
-                        log::warn!("Failed to load libva: {}", e);
+                        tracing::warn!("Failed to load libva: {}", e);
                         return None;
                     }
                 };
@@ -253,7 +253,7 @@ fn load_vaapi_library() -> Option<&'static VaapiLibrary> {
                 let libva_drm = match libloading::Library::new(libva_drm_path) {
                     Ok(lib) => lib,
                     Err(e) => {
-                        log::warn!("Failed to load libva-drm: {}", e);
+                        tracing::warn!("Failed to load libva-drm: {}", e);
                         return None;
                     }
                 };
@@ -286,7 +286,7 @@ fn load_vaapi_library() -> Option<&'static VaapiLibrary> {
                 // Load from libva-drm
                 let va_get_display_drm: VaGetDisplayDrmFn = *libva_drm.get(b"vaGetDisplayDRM\0").ok()?;
                 
-                log::info!("VAAPI library loaded successfully");
+                tracing::info!("VAAPI library loaded successfully");
                 
                 Some(VaapiLibrary {
                     _libva: libva,
@@ -621,7 +621,7 @@ impl VaapiDecoder {
                     _ => 8,
                 };
                 
-                log::info!("VAAPI decoder created for {:?} {}x{}", codec, width, height);
+                tracing::info!("VAAPI decoder created for {:?} {}x{}", codec, width, height);
                 
                 Ok(Self {
                     lib,

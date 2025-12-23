@@ -22,6 +22,21 @@ impl AppHandle {
     pub fn get_webview_window(&self, _label: &str) -> Option<WebviewWindow> {
         None
     }
+
+    /// Stub for exit
+    pub fn exit(&self, _code: i32) {}
+
+    /// Stub for tray handle
+    pub fn tray_handle_by_id(&self, _id: &str) -> Option<TrayHandle> {
+        None
+    }
+}
+
+/// Stub for tray handle
+pub struct TrayHandle;
+
+impl TrayHandle {
+    pub fn set_menu(&self, _menu: SystemTrayMenu) -> Result<(), ()> { Ok(()) }
 }
 
 /// Stub for webview window
@@ -30,6 +45,7 @@ pub struct WebviewWindow;
 impl WebviewWindow {
     pub fn show(&self) -> Result<(), ()> { Ok(()) }
     pub fn set_focus(&self) -> Result<(), ()> { Ok(()) }
+    pub fn emit(&self, _event: &str, _payload: &str) -> Result<(), ()> { Ok(()) }
 }
 
 /// Stub for system tray menu
@@ -426,16 +442,23 @@ pub fn remove_security_camera(camera_id: String) -> Result<(), String> {
 
 pub fn toggle_camera_pip(camera_id: String) -> Result<bool, String> {
     let mut settings = load_settings().unwrap_or_default();
-    
+
+    let mut new_state = None;
     for cam in &mut settings.cameras {
         if cam.id == camera_id {
             cam.enabled = !cam.enabled;
-            save_settings(&settings)?;
-            return Ok(cam.enabled);
+            new_state = Some(cam.enabled);
+            break;
         }
     }
-    
-    Err("Camera not found".to_string())
+
+    match new_state {
+        Some(enabled) => {
+            save_settings(&settings)?;
+            Ok(enabled)
+        }
+        None => Err("Camera not found".to_string())
+    }
 }
 
 

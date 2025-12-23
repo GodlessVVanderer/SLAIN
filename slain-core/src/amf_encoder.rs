@@ -443,7 +443,7 @@ impl AmfEncoder {
                 return Err(format!("AMFQueryVersion failed: {}", result));
             }
             
-            log::info!("AMF version: {}.{}.{}", 
+            tracing::info!("AMF version: {}.{}.{}", 
                 (version >> 48) & 0xFFFF,
                 (version >> 32) & 0xFFFF,
                 (version >> 16) & 0xFFFF
@@ -532,7 +532,7 @@ impl AmfEncoder {
             self.initialized.store(true, Ordering::SeqCst);
             self.start_time = Some(Instant::now());
             
-            log::info!("AMF {} encoder initialized: {}x{} @ {} fps",
+            tracing::info!("AMF {} encoder initialized: {}x{} @ {} fps",
                 codec_id,
                 self.config.width,
                 self.config.height,
@@ -837,7 +837,7 @@ impl Drop for AmfEncoder {
             }
         }
         
-        log::info!("AMF encoder released");
+        tracing::info!("AMF encoder released");
     }
 }
 
@@ -849,9 +849,9 @@ use parking_lot::Mutex;
 use std::fs::File;
 use std::io::Write;
 
-lazy_static::lazy_static! {
-    static ref RECORDING_STATE: Mutex<Option<RecordingSession>> = Mutex::new(None);
-}
+use once_cell::sync::Lazy;
+
+static RECORDING_STATE: Lazy<Mutex<Option<RecordingSession>>> = Lazy::new(|| Mutex::new(None));
 
 struct RecordingSession {
     encoder: AmfEncoder,

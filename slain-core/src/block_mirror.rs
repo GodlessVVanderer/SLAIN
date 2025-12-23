@@ -311,50 +311,52 @@ pub struct MirrorDelta {
 /// It's infinitely detailed in both directions
 /// The hash space is similar - patterns exist at every scale
 
-pub struct MandelHash {
+pub struct MandelHash;
+
+impl MandelHash {
     /// Map hash to complex plane coordinates
     pub fn hash_to_complex(hash: &[u8; 32]) -> (f64, f64) {
         // Use first 16 bytes for real, second 16 for imaginary
         let real_bytes = &hash[0..16];
         let imag_bytes = &hash[16..32];
-        
+
         let real = bytes_to_normalized_f64(real_bytes);
         let imag = bytes_to_normalized_f64(imag_bytes);
-        
+
         // Map to interesting region of Mandelbrot
         // (-2.5 to 1.0, -1.0 to 1.0)
         let mapped_real = real * 3.5 - 2.5;
         let mapped_imag = imag * 2.0 - 1.0;
-        
+
         (mapped_real, mapped_imag)
     }
-    
+
     /// Check if point is in Mandelbrot set
     pub fn in_mandelbrot(c_real: f64, c_imag: f64, max_iter: u32) -> (bool, u32) {
         let mut z_real = 0.0;
         let mut z_imag = 0.0;
-        
+
         for i in 0..max_iter {
             let z_real_sq = z_real * z_real;
             let z_imag_sq = z_imag * z_imag;
-            
+
             if z_real_sq + z_imag_sq > 4.0 {
                 return (false, i);
             }
-            
+
             z_imag = 2.0 * z_real * z_imag + c_imag;
             z_real = z_real_sq - z_imag_sq + c_real;
         }
-        
+
         (true, max_iter)
     }
-    
+
     /// Hashes that map to Mandelbrot boundary are "interesting"
     /// They have maximum information content
     pub fn hash_information_content(hash: &[u8; 32]) -> f64 {
         let (real, imag) = Self::hash_to_complex(hash);
         let (in_set, iterations) = Self::in_mandelbrot(real, imag, 1000);
-        
+
         if in_set {
             // Deep in set - low information
             0.1
