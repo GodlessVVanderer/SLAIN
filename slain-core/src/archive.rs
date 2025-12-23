@@ -509,9 +509,9 @@ pub fn create_tar_gz<P: AsRef<Path>>(
 // GZIP Operations (single file)
 // ============================================================================
 
-pub fn compress_gzip<P: AsRef<Path>>(
+pub fn compress_gzip<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: Option<P>,
+    output_path: Option<Q>,
     level: u32,
 ) -> Result<u64, String> {
     let input_path = input_path.as_ref();
@@ -550,9 +550,9 @@ pub fn compress_gzip<P: AsRef<Path>>(
     Ok(size)
 }
 
-pub fn decompress_gzip<P: AsRef<Path>>(
+pub fn decompress_gzip<P: AsRef<Path>, Q: AsRef<Path>>(
     input_path: P,
-    output_path: Option<P>,
+    output_path: Option<Q>,
 ) -> Result<u64, String> {
     let input_path = input_path.as_ref();
     let output_path = output_path

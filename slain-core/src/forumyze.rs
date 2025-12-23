@@ -509,7 +509,7 @@ pub async fn forumyze_analyze_video(video_url: String) -> Result<VideoComments, 
         return Err("FORUMYZE is disabled. Enable it in settings.".to_string());
     }
     
-    let api_key = settings.youtube_api_key
+    let api_key = settings.youtube_api_key.clone()
         .ok_or("YouTube API key not configured. Add it in settings.")?;
     
     let video_id = extract_video_id(&video_url)

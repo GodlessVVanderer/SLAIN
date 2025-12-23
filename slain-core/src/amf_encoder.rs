@@ -849,9 +849,9 @@ use parking_lot::Mutex;
 use std::fs::File;
 use std::io::Write;
 
-lazy_static::lazy_static! {
-    static ref RECORDING_STATE: Mutex<Option<RecordingSession>> = Mutex::new(None);
-}
+use once_cell::sync::Lazy;
+
+static RECORDING_STATE: Lazy<Mutex<Option<RecordingSession>>> = Lazy::new(|| Mutex::new(None));
 
 struct RecordingSession {
     encoder: AmfEncoder,

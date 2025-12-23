@@ -367,7 +367,8 @@ fn scan_vulnerabilities(firmware: &[u8]) -> Vec<Vulnerability> {
     }
     
     // Hardcoded credentials patterns
-    for pattern in [b"password", b"admin", b"root", b"default"].iter() {
+    let cred_patterns: &[&[u8]] = &[b"password", b"admin", b"root", b"default"];
+    for pattern in cred_patterns.iter() {
         if contains_pattern(firmware, pattern) {
             vulns.push(Vulnerability {
                 location: 0,

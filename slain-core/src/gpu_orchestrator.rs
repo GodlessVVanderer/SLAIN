@@ -294,7 +294,7 @@ fn detect_amd_gpus() -> Option<Vec<GpuDevice>> {
 
 fn detect_gpus_vulkan() -> Vec<GpuDevice> {
     // Use wgpu to enumerate adapters (already in our deps)
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });

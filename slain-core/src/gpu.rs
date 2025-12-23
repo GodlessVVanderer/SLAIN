@@ -26,6 +26,12 @@ pub enum GpuError {
     Unsupported { vendor: GpuVendor, op: String },
     #[error("GPU access denied - need admin/root")]
     AccessDenied,
+    #[error("Initialization failed: {0}")]
+    InitializationFailed(String),
+    #[error("No devices found")]
+    NoDevicesFound,
+    #[error("Device not found: index {0}")]
+    DeviceNotFound(usize),
 }
 
 /// GPU vendor identification

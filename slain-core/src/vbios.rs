@@ -184,44 +184,28 @@ impl VbiosReader {
             let mut power_limit = 0u32;
             get_power_limit(device, &mut power_limit);
             
-            let get_power_min_max: Symbol<unsafe extern "C" fn(NvmlDevice, *mut u32, *mut u32) -> NvmlReturn> =
-                lib.get(b"nvmlDeviceGetPowerManagementLimitConstraints")
-                    .unwrap_or_else(|_| std::mem::transmute(std::ptr::null::<()>()));
-            
             let mut min_power = 0u32;
             let mut max_power = 0u32;
-            if !get_power_min_max.is_null() {
+            if let Ok(get_power_min_max) = lib.get::<unsafe extern "C" fn(NvmlDevice, *mut u32, *mut u32) -> NvmlReturn>(b"nvmlDeviceGetPowerManagementLimitConstraints") {
                 let _ = get_power_min_max(device, &mut min_power, &mut max_power);
             }
-            
-            let get_default_power: Symbol<unsafe extern "C" fn(NvmlDevice, *mut u32) -> NvmlReturn> =
-                lib.get(b"nvmlDeviceGetPowerManagementDefaultLimit")
-                    .unwrap_or_else(|_| std::mem::transmute(std::ptr::null::<()>()));
-            
+
             let mut default_power = 0u32;
-            if !get_default_power.is_null() {
+            if let Ok(get_default_power) = lib.get::<unsafe extern "C" fn(NvmlDevice, *mut u32) -> NvmlReturn>(b"nvmlDeviceGetPowerManagementDefaultLimit") {
                 let _ = get_default_power(device, &mut default_power);
             }
-            
+
             // Get clocks
-            let get_clock: Symbol<unsafe extern "C" fn(NvmlDevice, u32, *mut u32) -> NvmlReturn> =
-                lib.get(b"nvmlDeviceGetMaxClockInfo")
-                    .unwrap_or_else(|_| std::mem::transmute(std::ptr::null::<()>()));
-            
             let mut graphics_clock = 0u32;
             let mut mem_clock = 0u32;
-            if !get_clock.is_null() {
+            if let Ok(get_clock) = lib.get::<unsafe extern "C" fn(NvmlDevice, u32, *mut u32) -> NvmlReturn>(b"nvmlDeviceGetMaxClockInfo") {
                 let _ = get_clock(device, 0, &mut graphics_clock); // NVML_CLOCK_GRAPHICS
                 let _ = get_clock(device, 2, &mut mem_clock);      // NVML_CLOCK_MEM
             }
-            
+
             // Get fan info
-            let get_fan_speed: Symbol<unsafe extern "C" fn(NvmlDevice, *mut u32) -> NvmlReturn> =
-                lib.get(b"nvmlDeviceGetFanSpeed")
-                    .unwrap_or_else(|_| std::mem::transmute(std::ptr::null::<()>()));
-            
             let mut fan_speed = 0u32;
-            if !get_fan_speed.is_null() {
+            if let Ok(get_fan_speed) = lib.get::<unsafe extern "C" fn(NvmlDevice, *mut u32) -> NvmlReturn>(b"nvmlDeviceGetFanSpeed") {
                 let _ = get_fan_speed(device, &mut fan_speed);
             }
             
