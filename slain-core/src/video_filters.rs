@@ -800,42 +800,203 @@ impl FilterProcessor {
             return;
         }
 
-        // Upload input
-        if let Some(tex) = &self.input_texture {
-            self.queue.write_texture(
-                wgpu::ImageCopyTexture {
-                    texture: tex,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                input,
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * self.width),
-                    rows_per_image: Some(self.height),
-                },
-                wgpu::Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
-            );
+        // Ensure textures are allocated
+        if self.input_texture.is_none() || self.width == 0 || self.height == 0 {
+            output[..input.len()].copy_from_slice(input);
+            return;
         }
 
-        // Process filters
-        // (Simplified - full implementation would dispatch each filter)
+        // Upload input to GPU
+        let input_tex = self.input_texture.as_ref().unwrap();
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: input_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            input,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * self.width),
+                rows_per_image: Some(self.height),
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Create command encoder
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("filter_encoder"),
         });
 
-        // For each filter, dispatch compute shader
-        // Ping-pong between buffers
+        // Workgroup size (must match shader)
+        let workgroup_size = 16u32;
+        let dispatch_x = (self.width + workgroup_size - 1) / workgroup_size;
+        let dispatch_y = (self.height + workgroup_size - 1) / workgroup_size;
 
+        // Track current input/output textures for ping-pong
+        let mut current_input = input_tex;
+        let mut ping_pong_idx = 0usize;
+
+        // Process each filter in the chain
+        for filter in chain.filters() {
+            // Skip identity filters
+            if filter.is_identity() {
+                continue;
+            }
+
+            let pipeline_name = filter.name();
+
+            // Get the compiled pipeline for this filter type
+            if let Some(compiled) = self.pipelines.get(pipeline_name) {
+                // Get the output texture (ping-pong buffer)
+                let output_tex = self.ping_pong[ping_pong_idx].as_ref()
+                    .unwrap_or_else(|| self.output_texture.as_ref().unwrap());
+
+                // Create parameter buffer based on filter type
+                let param_buffer = match filter {
+                    Filter::Color(params) => {
+                        // Pack ColorParams into uniform buffer (must be 16-byte aligned)
+                        let data = [
+                            params.brightness,
+                            params.contrast,
+                            params.saturation,
+                            params.gamma,
+                            params.hue,
+                            params.temperature,
+                            params.vibrance,
+                            0.0f32, // padding
+                        ];
+                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("color_params"),
+                            contents: bytemuck::cast_slice(&data),
+                            usage: wgpu::BufferUsages::UNIFORM,
+                        })
+                    }
+                    Filter::Sharpen(params) => {
+                        let data = [
+                            params.strength,
+                            params.radius,
+                            params.threshold,
+                            params.algorithm as u32 as f32,
+                        ];
+                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("sharpen_params"),
+                            contents: bytemuck::cast_slice(&data),
+                            usage: wgpu::BufferUsages::UNIFORM,
+                        })
+                    }
+                    _ => {
+                        // Default empty params for other filters
+                        let data = [0.0f32; 4];
+                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("filter_params"),
+                            contents: bytemuck::cast_slice(&data),
+                            usage: wgpu::BufferUsages::UNIFORM,
+                        })
+                    }
+                };
+
+                // Create texture views
+                let input_view = current_input.create_view(&wgpu::TextureViewDescriptor::default());
+                let output_view = output_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+                // Create bind group
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("filter_bind_group"),
+                    layout: &compiled.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&input_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&output_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: param_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+
+                // Create compute pass and dispatch
+                {
+                    let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("filter_pass"),
+                        timestamp_writes: None,
+                    });
+
+                    compute_pass.set_pipeline(&compiled.pipeline);
+                    compute_pass.set_bind_group(0, &bind_group, &[]);
+                    compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+                }
+
+                // Swap ping-pong buffers
+                current_input = output_tex;
+                ping_pong_idx = 1 - ping_pong_idx;
+            }
+        }
+
+        // Create staging buffer for GPU -> CPU copy
+        let buffer_size = (4 * self.width * self.height) as u64;
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging_buffer"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Copy final result to staging buffer
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: current_input,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &staging_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * self.width),
+                    rows_per_image: Some(self.height),
+                },
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Submit commands
         self.queue.submit(Some(encoder.finish()));
 
-        // Download output
-        // (Would need staging buffer for GPU -> CPU copy)
+        // Map staging buffer and copy to output
+        let buffer_slice = staging_buffer.slice(..);
+
+        // Use blocking map (for synchronous API)
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+
+        // Poll device until map is complete
+        self.device.poll(wgpu::Maintain::Wait);
+
+        if rx.recv().ok().flatten().is_ok() {
+            let data = buffer_slice.get_mapped_range();
+            let len = output.len().min(data.len());
+            output[..len].copy_from_slice(&data[..len]);
+        }
+
+        staging_buffer.unmap();
     }
 
     /// Get GPU device info

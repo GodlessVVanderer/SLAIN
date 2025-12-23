@@ -443,7 +443,7 @@ impl AmfEncoder {
                 return Err(format!("AMFQueryVersion failed: {}", result));
             }
             
-            log::info!("AMF version: {}.{}.{}", 
+            tracing::info!("AMF version: {}.{}.{}", 
                 (version >> 48) & 0xFFFF,
                 (version >> 32) & 0xFFFF,
                 (version >> 16) & 0xFFFF
@@ -532,7 +532,7 @@ impl AmfEncoder {
             self.initialized.store(true, Ordering::SeqCst);
             self.start_time = Some(Instant::now());
             
-            log::info!("AMF {} encoder initialized: {}x{} @ {} fps",
+            tracing::info!("AMF {} encoder initialized: {}x{} @ {} fps",
                 codec_id,
                 self.config.width,
                 self.config.height,
@@ -837,7 +837,7 @@ impl Drop for AmfEncoder {
             }
         }
         
-        log::info!("AMF encoder released");
+        tracing::info!("AMF encoder released");
     }
 }
 

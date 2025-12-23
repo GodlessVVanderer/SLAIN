@@ -351,7 +351,7 @@ fn load_amf_library() -> Option<&'static AmfLibrary> {
                 let lib = match libloading::Library::new(AMF_DLL) {
                     Ok(l) => l,
                     Err(e) => {
-                        log::warn!("Failed to load AMF library: {}", e);
+                        tracing::warn!("Failed to load AMF library: {}", e);
                         return None;
                     }
                 };
@@ -363,7 +363,7 @@ fn load_amf_library() -> Option<&'static AmfLibrary> {
                 let mut version: u64 = 0;
                 let result = query_version(&mut version);
                 if result != AMF_OK {
-                    log::warn!("AMFQueryVersion failed: {}", result);
+                    tracing::warn!("AMFQueryVersion failed: {}", result);
                     return None;
                 }
                 
@@ -371,11 +371,11 @@ fn load_amf_library() -> Option<&'static AmfLibrary> {
                 let mut factory: *mut c_void = ptr::null_mut();
                 let result = init(version, &mut factory);
                 if result != AMF_OK || factory.is_null() {
-                    log::warn!("AMFInit failed: {}", result);
+                    tracing::warn!("AMFInit failed: {}", result);
                     return None;
                 }
                 
-                log::info!("AMF library loaded, version {}.{}.{}", 
+                tracing::info!("AMF library loaded, version {}.{}.{}", 
                     (version >> 48) & 0xFFFF,
                     (version >> 32) & 0xFFFF,
                     version & 0xFFFFFFFF);
@@ -602,7 +602,7 @@ impl AmfDecoder {
                 _ => 8,
             };
             
-            log::info!("AMF decoder created for {:?} {}x{}", codec, width, height);
+            tracing::info!("AMF decoder created for {:?} {}x{}", codec, width, height);
             
             Ok(Self {
                 lib,

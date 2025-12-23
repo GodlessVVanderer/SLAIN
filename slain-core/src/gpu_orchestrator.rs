@@ -737,7 +737,7 @@ pub fn set_secondary_gpu_power(low_power: bool) {
         // On Windows, would use DXGI to set power preference
         // On Linux, would write to sysfs
         
-        log::info!(
+        tracing::info!(
             "Setting secondary GPU {} to {} power mode",
             secondary_id,
             if low_power { "low" } else { "normal" }

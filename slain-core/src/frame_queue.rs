@@ -569,7 +569,7 @@ impl FrameQueue {
         self.ready_cond.notify_all();
         self.space_cond.notify_all();
 
-        log::debug!("Queue flushed, generation {}", generation);
+        tracing::debug!("Queue flushed, generation {}", generation);
     }
 
     /// Get current seek generation (for detecting stale frames)
