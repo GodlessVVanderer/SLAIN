@@ -79,6 +79,7 @@ pub mod forumyze;
 pub mod cosmic_movie;
 pub mod starlight;
 pub mod block_mirror;
+pub mod fractal;
 
 // ============================================================================
 // Stubs (to be implemented)
