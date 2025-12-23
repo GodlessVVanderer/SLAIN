@@ -41,6 +41,7 @@ pub mod mp4_demux;
 pub mod audio;
 pub mod pixel_convert;
 pub mod gpu_video_processor;
+pub mod frame_queue;
 pub mod subtitles;
 pub mod imaging;
 
