@@ -42,6 +42,7 @@ pub mod audio;
 pub mod pixel_convert;
 pub mod gpu_video_processor;
 pub mod frame_queue;
+pub mod video_filters;
 pub mod subtitles;
 pub mod imaging;
 
