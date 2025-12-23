@@ -34,6 +34,7 @@ pub mod mkv;
 pub mod avi_demux;
 pub mod ts_demux;
 pub mod mp4_demux;
+pub mod lav;  // LAV Filters replacement (splitter + decoders)
 
 // ============================================================================
 // Media Processing
