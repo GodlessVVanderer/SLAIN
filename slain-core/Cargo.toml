@@ -45,6 +45,12 @@ cpal.workspace = true
 rubato.workspace = true
 ringbuf = "0.4"
 
+# Video decoding
+openh264 = "0.6"
+
+# Regex for parsing
+regex = "1.10"
+
 # Image processing
 image.workspace = true
 
