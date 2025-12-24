@@ -228,10 +228,10 @@ impl SlainApp {
                 // Find video track for dimensions
                 for track in &info.tracks {
                     if let MkvTrack::Video(v) = track {
-                        self.frame_width = v.width;
-                        self.frame_height = v.height;
-                        tracing::info!("Video: {}x{} @ {} fps", 
-                            v.width, v.height, v.frame_rate.unwrap_or(0.0));
+                        self.frame_width = v.pixel_width;
+                        self.frame_height = v.pixel_height;
+                        tracing::info!("Video: {}x{} @ {} fps",
+                            v.pixel_width, v.pixel_height, v.frame_rate.unwrap_or(0.0));
                         
                         // Find best decoder for codec
                         let codec = match v.codec_id.as_str() {
@@ -779,7 +779,7 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
     let (vid_w, vid_h) = info.tracks.iter()
         .find_map(|t| {
             if let MkvTrack::Video(v) = t {
-                Some((v.width, v.height))
+                Some((v.pixel_width, v.pixel_height))
             } else {
                 None
             }
@@ -935,7 +935,7 @@ fn decode_mp4(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
         height: vid_h,
         preferred_backend: Some(HwDecoderType::Software),
         allow_software_fallback: true,
-        extra_data: video_info.extra_data.clone(),
+        extra_data: Some(video_info.extra_data.clone()),
     };
     
     let mut decoder = HwDecoder::new(config)?;

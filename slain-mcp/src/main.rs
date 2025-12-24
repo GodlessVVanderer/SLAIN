@@ -763,11 +763,11 @@ impl McpServer {
         let script = args["script"].as_str();
         
         let desc = match pipeline {
-            "direct" => "Direct passthrough (no processing)".into(),
-            "avisynth" => "AviSynth filter chain (DLL FFI)".into(),
-            "vapoursynth" => "VapourSynth Python filters (DLL FFI)".into(),
-            "vulkan" => "Vulkan compute shaders (wgpu)".into(),
-            "cuda" => "CUDA kernels (DLL FFI)".into(),
+            "direct" => "Direct passthrough (no processing)",
+            "avisynth" => "AviSynth filter chain (DLL FFI)",
+            "vapoursynth" => "VapourSynth Python filters (DLL FFI)",
+            "vulkan" => "Vulkan compute shaders (wgpu)",
+            "cuda" => "CUDA kernels (DLL FFI)",
             _ => return Err(format!("Unknown pipeline: {}", pipeline)),
         };
         
