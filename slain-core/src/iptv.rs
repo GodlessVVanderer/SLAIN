@@ -303,7 +303,7 @@ impl IptvManager {
     
     /// Get all groups
     pub fn get_all_groups(&self) -> Vec<String> {
-        let mut groups: std::collections::HashSet<_> = self.playlists.iter()
+        let groups: std::collections::HashSet<_> = self.playlists.iter()
             .flat_map(|p| p.groups.iter().cloned())
             .collect();
         
@@ -341,7 +341,7 @@ impl IptvManager {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public API
 // ============================================================================
 
 use std::sync::Mutex;

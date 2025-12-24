@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 // AMF Types (from AMF SDK headers)
 // ============================================================================
 
-type AMF_RESULT = i32;
+type AmfResult = i32;
 type AMFContext = *mut c_void;
 type AMFComponent = *mut c_void;
 type AMFSurface = *mut c_void;
@@ -33,12 +33,12 @@ type AMFTrace = *mut c_void;
 type AMFPlane = *mut c_void;
 
 // AMF Result codes
-const AMF_OK: AMF_RESULT = 0;
-const AMF_FAIL: AMF_RESULT = 1;
-const AMF_EOF: AMF_RESULT = 11;
-const AMF_REPEAT: AMF_RESULT = 12;
-const AMF_INPUT_FULL: AMF_RESULT = 13;
-const AMF_NEED_MORE_INPUT: AMF_RESULT = 24;
+const AMF_OK: AmfResult = 0;
+const AMF_FAIL: AmfResult = 1;
+const AMF_EOF: AmfResult = 11;
+const AMF_REPEAT: AmfResult = 12;
+const AMF_INPUT_FULL: AmfResult = 13;
+const AMF_NEED_MORE_INPUT: AmfResult = 24;
 
 // Memory types
 const AMF_MEMORY_UNKNOWN: i32 = 0;
@@ -780,7 +780,7 @@ impl Drop for AmfDecoder {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public API
 // ============================================================================
 
 

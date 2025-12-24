@@ -37,6 +37,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use wgpu::util::DeviceExt;
 
 // ============================================================================
 // Filter Parameters
