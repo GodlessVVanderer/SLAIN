@@ -574,15 +574,16 @@ impl RtmpStreamer {
         };
         
         let rtmp_url = format!("{}/{}", self.config.server_url, self.config.stream_key);
-        
+        let fps_str = self.config.fps.to_string();
+
         #[cfg(target_os = "windows")]
-        let capture_args = vec!["-f", "gdigrab", "-framerate", &self.config.fps.to_string(), "-i", "desktop"];
-        
+        let capture_args = vec!["-f", "gdigrab", "-framerate", &fps_str, "-i", "desktop"];
+
         #[cfg(target_os = "linux")]
-        let capture_args = vec!["-f", "x11grab", "-framerate", &self.config.fps.to_string(), "-i", ":0.0"];
-        
+        let capture_args = vec!["-f", "x11grab", "-framerate", &fps_str, "-i", ":0.0"];
+
         #[cfg(target_os = "macos")]
-        let capture_args = vec!["-f", "avfoundation", "-framerate", &self.config.fps.to_string(), "-i", "1:0"];
+        let capture_args = vec!["-f", "avfoundation", "-framerate", &fps_str, "-i", "1:0"];
         
         let bitrate_str = format!("{}k", self.config.bitrate_kbps);
         let audio_bitrate_str = format!("{}k", self.config.audio_bitrate);

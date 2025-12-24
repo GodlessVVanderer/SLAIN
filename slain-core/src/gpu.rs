@@ -556,7 +556,7 @@ impl NvapiLoader {
         
         let status = unsafe { enum_fn(handles.as_mut_ptr(), &mut count) };
         if status != NVAPI_OK || device_index >= count {
-            return Err(GpuError::DeviceNotFound(device_index));
+            return Err(GpuError::DeviceNotFound(device_index as usize));
         }
         
         let handle = handles[device_index as usize];
@@ -807,17 +807,22 @@ impl AdlLoader {
             let adl_adapter_memoryinfo_get: Option<unsafe extern "C" fn(i32, *mut AdlMemoryInfo) -> AdlStatus> =
                 lib.get(b"ADL_Adapter_MemoryInfo_Get").ok().map(|f| *f);
             
+            // Dereference function pointers before moving lib
+            let adl_main_control_create_fn = *adl_main_control_create;
+            let adl_main_control_destroy_fn = *adl_main_control_destroy;
+            let adl_adapter_number_of_adapters_get_fn = *adl_adapter_number_of_adapters_get;
+
             // Initialize ADL
-            let status = adl_main_control_create(adl_mem_alloc, 1);
+            let status = adl_main_control_create_fn(adl_mem_alloc, 1);
             if status != ADL_OK {
                 return Err(GpuError::InitializationFailed(format!("ADL_Main_Control_Create failed: {}", status)));
             }
-            
+
             Ok(Self {
                 lib,
-                adl_main_control_create: *adl_main_control_create,
-                adl_main_control_destroy: *adl_main_control_destroy,
-                adl_adapter_number_of_adapters_get: *adl_adapter_number_of_adapters_get,
+                adl_main_control_create: adl_main_control_create_fn,
+                adl_main_control_destroy: adl_main_control_destroy_fn,
+                adl_adapter_number_of_adapters_get: adl_adapter_number_of_adapters_get_fn,
                 adl_adapter_adapter_info_get,
                 adl_adapter_active_get,
                 adl_overdrive5_temperature_get,
