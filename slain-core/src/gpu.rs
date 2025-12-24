@@ -667,6 +667,7 @@ const ADL_MAX_ADAPTERS: usize = 256;
 
 #[repr(C)]
 #[derive(Clone)]
+#[allow(non_snake_case)]
 struct AdlAdapterInfo {
     size: i32,
     adapter_index: i32,

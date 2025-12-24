@@ -13,12 +13,12 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 // Import from our core library - NOT rewriting
-use slain_core::mkv::{MkvParser, MkvInfo, MkvTrack, MkvDemuxer, MkvPacket};
-use slain_core::mp4_demux::{Packet, mp4::Mp4Demuxer};
+use slain_core::mkv::{MkvParser, MkvInfo, MkvTrack, MkvDemuxer};
+use slain_core::mp4_demux::mp4::Mp4Demuxer;
 use slain_core::audio::{AudioPlayer, audio_set_volume};
-use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecodedFrame, DecoderConfig};
+use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecoderConfig};
 use slain_core::pixel_convert::{PixelConverter, VideoFrame as PxVideoFrame, PixelFormat as PxFormat, ColorSpace};
-use slain_core::bandwidth::{window_monitor, AttentionState};
+use slain_core::bandwidth::window_monitor;
 use slain_core::pipeline::{PipelineKind, PipelineManager};
 
 // ============================================================================
@@ -149,6 +149,7 @@ struct SlainApp {
     // UI state
     show_osd: bool,
     is_fullscreen: bool,
+    #[allow(dead_code)]
     show_settings: bool,
     
     // Stats
@@ -532,7 +533,7 @@ impl eframe::App for SlainApp {
             let elapsed_ms = start_time.elapsed().as_millis() as u64;
 
             // Peek at next frame to check its PTS
-            let mut queue = self.shared.frame_queue.lock();
+            let queue = self.shared.frame_queue.lock();
             if let Some(frame) = queue.front() {
                 // Display frame if its PTS has arrived, or if we're behind
                 frame.pts_ms <= elapsed_ms + 5 // 5ms tolerance
@@ -750,7 +751,8 @@ impl eframe::App for SlainApp {
                         rect.min + egui::vec2(10.0, 10.0),
                         egui::vec2(250.0, 140.0),
                     );
-                    
+
+                    #[allow(deprecated)]
                     ui.allocate_ui_at_rect(osd_rect, |ui| {
                         egui::Frame::popup(ui.style())
                             .fill(egui::Color32::from_black_alpha(200))
