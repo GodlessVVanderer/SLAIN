@@ -172,7 +172,8 @@ pub enum ChannelLayout {
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub stream_index: u32,
-    pub pts: i64,           // Presentation timestamp
+    pub pts: i64,           // Presentation timestamp (in track timescale)
+    pub pts_ms: i64,        // Presentation timestamp in milliseconds
     pub dts: i64,           // Decode timestamp
     pub duration: i64,
     pub keyframe: bool,
@@ -827,12 +828,20 @@ pub mod mp4 {
             let pts = best_time;
             let dts = best_time;  // Simplified - should use ctts
 
+            // Convert PTS to milliseconds using track timescale
+            let pts_ms = if track.timescale > 0 {
+                (pts * 1000) / (track.timescale as i64)
+            } else {
+                pts
+            };
+
             // Advance to next sample
             self.tracks[track_idx].current_sample += 1;
 
             Some(Packet {
                 stream_index: track_idx as u32,
                 pts,
+                pts_ms,
                 dts,
                 duration: 0,
                 keyframe,
