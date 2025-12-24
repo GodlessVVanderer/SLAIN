@@ -879,7 +879,7 @@ pub mod mp4 {
             // Find which chunk this sample is in
             let mut chunk = 0usize;
             let mut sample = 0usize;
-            let mut samples_per_chunk = stsc[0].1 as usize;
+            let _samples_per_chunk = stsc[0].1 as usize;
 
             for i in 0..stsc.len() {
                 let first_chunk = (stsc[i].0 - 1) as usize;
