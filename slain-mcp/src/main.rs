@@ -21,7 +21,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use slain_core::gpu::{gpu_manager, GpuDevice, GpuState, GpuVendor};
+use slain_core::gpu::gpu_manager;
 use std::io::{self, BufRead, Write};
 use tracing::{debug, error, info, warn};
 
@@ -65,6 +65,7 @@ struct Tool {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct ToolResult {
     content: Vec<ToolContent>,
     #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
@@ -72,6 +73,7 @@ struct ToolResult {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct ToolContent {
     #[serde(rename = "type")]
     content_type: String,
