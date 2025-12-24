@@ -141,6 +141,10 @@ struct SlainApp {
     frame_width: u32,
     frame_height: u32,
     last_frame_time: Instant,
+
+    // Frame pacing
+    playback_start_time: Option<Instant>,
+    last_displayed_pts: u64,
     
     // UI state
     show_osd: bool,
@@ -173,6 +177,8 @@ impl SlainApp {
             frame_width: 1920,
             frame_height: 1080,
             last_frame_time: Instant::now(),
+            playback_start_time: None,
+            last_displayed_pts: 0,
             show_osd: true,
             is_fullscreen: false,
             show_settings: false,
@@ -196,7 +202,12 @@ impl SlainApp {
     /// Open a media file using slain-core parsers
     fn open_file(&mut self, path: PathBuf) {
         tracing::info!("Opening: {:?}", path);
-        
+
+        // Reset playback state
+        self.playback_start_time = None;
+        self.last_displayed_pts = 0;
+        self.current_time_ms = 0;
+
         // Determine file type by extension
         let ext = path.extension()
             .and_then(|e| e.to_str())
@@ -382,11 +393,16 @@ impl SlainApp {
     
     fn seek(&mut self, time_ms: u64) {
         self.current_time_ms = time_ms.min(self.duration_ms);
-        
+
         // Request seek in decode thread
         self.shared.seek_target_ms.store(self.current_time_ms, Ordering::SeqCst);
         self.shared.seek_requested.store(true, Ordering::SeqCst);
-        
+
+        // Reset playback timer to sync with new position
+        if self.is_playing() {
+            self.playback_start_time = Some(Instant::now() - Duration::from_millis(time_ms));
+        }
+
         // TODO: Seek in audio
     }
     
@@ -413,36 +429,64 @@ impl eframe::App for SlainApp {
         // Request continuous repaints when playing
         if self.is_playing() {
             ctx.request_repaint();
-            
+
+            // Initialize playback start time on first play
+            if self.playback_start_time.is_none() {
+                self.playback_start_time = Some(Instant::now());
+                self.last_displayed_pts = 0;
+            }
+
             // Sync state from shared
             self.current_time_ms = self.shared.current_time_ms.load(Ordering::Relaxed);
+        } else {
+            // Reset playback timer when paused
+            self.playback_start_time = None;
         }
-        
-        // Pull frame from queue and upload to texture
-        if let Some(frame) = self.shared.frame_queue.lock().pop_front() {
-            // Calculate FPS
-            let now = Instant::now();
-            let delta = now.duration_since(self.last_frame_time);
-            if delta.as_secs_f32() > 0.0 {
-                self.fps = 1.0 / delta.as_secs_f32();
+
+        // Pull frame from queue with PTS-based timing
+        let should_display = if let Some(start_time) = self.playback_start_time {
+            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+
+            // Peek at next frame to check its PTS
+            let mut queue = self.shared.frame_queue.lock();
+            if let Some(frame) = queue.front() {
+                // Display frame if its PTS has arrived, or if we're behind
+                frame.pts_ms <= elapsed_ms + 5 // 5ms tolerance
+            } else {
+                false
             }
-            self.last_frame_time = now;
-            self.frame_count += 1;
-            
-            // Upload to GPU texture
-            let image = ColorImage::from_rgb(
-                [frame.width as usize, frame.height as usize],
-                &frame.data,
-            );
-            
-            self.video_texture = Some(ctx.load_texture(
-                "video_frame",
-                image,
-                TextureOptions::LINEAR,
-            ));
-            
-            self.frame_width = frame.width;
-            self.frame_height = frame.height;
+        } else {
+            // Not playing, but still show first frame if available
+            !self.shared.frame_queue.lock().is_empty()
+        };
+
+        if should_display {
+            if let Some(frame) = self.shared.frame_queue.lock().pop_front() {
+                // Calculate FPS
+                let now = Instant::now();
+                let delta = now.duration_since(self.last_frame_time);
+                if delta.as_secs_f32() > 0.0 {
+                    self.fps = 1.0 / delta.as_secs_f32();
+                }
+                self.last_frame_time = now;
+                self.frame_count += 1;
+                self.last_displayed_pts = frame.pts_ms;
+
+                // Upload to GPU texture
+                let image = ColorImage::from_rgb(
+                    [frame.width as usize, frame.height as usize],
+                    &frame.data,
+                );
+
+                self.video_texture = Some(ctx.load_texture(
+                    "video_frame",
+                    image,
+                    TextureOptions::LINEAR,
+                ));
+
+                self.frame_width = frame.width;
+                self.frame_height = frame.height;
+            }
         }
         
         // Menu bar
