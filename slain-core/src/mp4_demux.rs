@@ -894,7 +894,7 @@ pub mod mp4 {
                 for c in first_chunk..next_first_chunk {
                     if sample + spc > sample_idx {
                         chunk = c;
-                        samples_per_chunk = spc;
+                        let _ = spc; // samples_per_chunk found
                         break;
                     }
                     sample += spc;

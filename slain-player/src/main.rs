@@ -1059,8 +1059,8 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
     
     let mut decoder = HwDecoder::new(config)?;
     
-    let mut frame_number: u64 = 0;
-    
+    let mut _frame_number: u64 = 0;
+
     while !shared.should_stop.load(Ordering::SeqCst) {
         if !shared.is_playing.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_millis(10));
@@ -1135,8 +1135,8 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
                             height: decoded.height,
                             pts_ms,
                         });
-                        
-                        frame_number += 1;
+
+                        _frame_number += 1;
                     }
                     Ok(None) => {}
                     Err(e) => {
