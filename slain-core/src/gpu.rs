@@ -667,6 +667,7 @@ const ADL_MAX_ADAPTERS: usize = 256;
 
 #[repr(C)]
 #[derive(Clone)]
+#[allow(non_snake_case)]
 struct AdlAdapterInfo {
     size: i32,
     adapter_index: i32,
@@ -773,51 +774,51 @@ impl AdlLoader {
         
         let lib = unsafe { Library::new(lib_path) }
             .map_err(|_| GpuError::LibraryNotFound(lib_path.into()))?;
-        
+
         unsafe {
-            // Required functions
-            let adl_main_control_create: libloading::Symbol<unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus> = 
-                lib.get(b"ADL_Main_Control_Create")
+            // Required functions - get and immediately dereference to copy the function pointer
+            let adl_main_control_create: unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus =
+                *lib.get::<unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus>(b"ADL_Main_Control_Create")
                     .map_err(|_| GpuError::InitializationFailed("ADL_Main_Control_Create not found".into()))?;
-            
-            let adl_main_control_destroy: libloading::Symbol<unsafe extern "C" fn() -> AdlStatus> =
-                lib.get(b"ADL_Main_Control_Destroy")
+
+            let adl_main_control_destroy: unsafe extern "C" fn() -> AdlStatus =
+                *lib.get::<unsafe extern "C" fn() -> AdlStatus>(b"ADL_Main_Control_Destroy")
                     .map_err(|_| GpuError::InitializationFailed("ADL_Main_Control_Destroy not found".into()))?;
-            
-            let adl_adapter_number_of_adapters_get: libloading::Symbol<unsafe extern "C" fn(*mut i32) -> AdlStatus> =
-                lib.get(b"ADL_Adapter_NumberOfAdapters_Get")
+
+            let adl_adapter_number_of_adapters_get: unsafe extern "C" fn(*mut i32) -> AdlStatus =
+                *lib.get::<unsafe extern "C" fn(*mut i32) -> AdlStatus>(b"ADL_Adapter_NumberOfAdapters_Get")
                     .map_err(|_| GpuError::InitializationFailed("ADL_Adapter_NumberOfAdapters_Get not found".into()))?;
-            
+
             // Optional functions
             let adl_adapter_adapter_info_get: Option<unsafe extern "C" fn(*mut AdlAdapterInfo, i32) -> AdlStatus> =
                 lib.get(b"ADL_Adapter_AdapterInfo_Get").ok().map(|f| *f);
-            
+
             let adl_adapter_active_get: Option<unsafe extern "C" fn(i32, *mut i32) -> AdlStatus> =
                 lib.get(b"ADL_Adapter_Active_Get").ok().map(|f| *f);
-            
+
             let adl_overdrive5_temperature_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlTemperature) -> AdlStatus> =
                 lib.get(b"ADL_Overdrive5_Temperature_Get").ok().map(|f| *f);
-            
+
             let adl_overdrive5_fanspeed_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlFanSpeedValue) -> AdlStatus> =
                 lib.get(b"ADL_Overdrive5_FanSpeed_Get").ok().map(|f| *f);
-            
+
             let adl_overdrive5_currentactivity_get: Option<unsafe extern "C" fn(i32, *mut AdlPmActivity) -> AdlStatus> =
                 lib.get(b"ADL_Overdrive5_CurrentActivity_Get").ok().map(|f| *f);
-            
+
             let adl_adapter_memoryinfo_get: Option<unsafe extern "C" fn(i32, *mut AdlMemoryInfo) -> AdlStatus> =
                 lib.get(b"ADL_Adapter_MemoryInfo_Get").ok().map(|f| *f);
-            
+
             // Initialize ADL
             let status = adl_main_control_create(adl_mem_alloc, 1);
             if status != ADL_OK {
                 return Err(GpuError::InitializationFailed(format!("ADL_Main_Control_Create failed: {}", status)));
             }
-            
+
             Ok(Self {
                 lib,
-                adl_main_control_create: *adl_main_control_create,
-                adl_main_control_destroy: *adl_main_control_destroy,
-                adl_adapter_number_of_adapters_get: *adl_adapter_number_of_adapters_get,
+                adl_main_control_create,
+                adl_main_control_destroy,
+                adl_adapter_number_of_adapters_get,
                 adl_adapter_adapter_info_get,
                 adl_adapter_active_get,
                 adl_overdrive5_temperature_get,

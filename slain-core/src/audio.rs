@@ -447,9 +447,10 @@ fn decode_audio_to_buffer(
         .make(&track.codec_params, &dec_opts)
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
     
-    let spec = *decoder.codec_params().channels.as_ref()
-        .ok_or("No channel info")?;
-    let channels = spec.count();
+    // Get channel count - default to stereo if not specified in codec params
+    let channels = decoder.codec_params().channels
+        .map(|c| c.count())
+        .unwrap_or(2);  // Default to stereo
     
     // Decode loop
     let mut sample_buf: Option<SampleBuffer<f32>> = None;

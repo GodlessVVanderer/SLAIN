@@ -13,12 +13,12 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 // Import from our core library - NOT rewriting
-use slain_core::mkv::{MkvParser, MkvInfo, MkvTrack, MkvDemuxer, MkvPacket};
-use slain_core::mp4_demux::{Packet, mp4::Mp4Demuxer};
-use slain_core::audio::AudioPlayer;
-use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecodedFrame, DecoderConfig};
+use slain_core::mkv::{MkvParser, MkvInfo, MkvTrack, MkvDemuxer};
+use slain_core::mp4_demux::mp4::Mp4Demuxer;
+use slain_core::audio::{AudioPlayer, audio_set_volume};
+use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecoderConfig};
 use slain_core::pixel_convert::{PixelConverter, VideoFrame as PxVideoFrame, PixelFormat as PxFormat, ColorSpace};
-use slain_core::bandwidth::{window_monitor, AttentionState};
+use slain_core::bandwidth::window_monitor;
 use slain_core::pipeline::{PipelineKind, PipelineManager};
 
 // ============================================================================
@@ -132,16 +132,24 @@ struct SlainApp {
     // Pipeline selection
     pipeline: PipelineKind,
     pipeline_manager: Option<PipelineManager>,
+
+    // Decoder preference
+    preferred_decoder: Option<HwDecoderType>,
     
     // Display
     video_texture: Option<TextureHandle>,
     frame_width: u32,
     frame_height: u32,
     last_frame_time: Instant,
+
+    // Frame pacing
+    playback_start_time: Option<Instant>,
+    last_displayed_pts: u64,
     
     // UI state
     show_osd: bool,
     is_fullscreen: bool,
+    #[allow(dead_code)]
     show_settings: bool,
     
     // Stats
@@ -152,7 +160,42 @@ struct SlainApp {
 }
 
 impl SlainApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Set up dark theme with modern styling
+        let mut visuals = egui::Visuals::dark();
+
+        // Darker background for video player
+        visuals.panel_fill = egui::Color32::from_rgb(18, 18, 18);
+        visuals.window_fill = egui::Color32::from_rgb(24, 24, 24);
+        visuals.extreme_bg_color = egui::Color32::from_rgb(10, 10, 10);
+
+        // Accent colors - subtle blue
+        visuals.selection.bg_fill = egui::Color32::from_rgb(50, 100, 150);
+        visuals.hyperlink_color = egui::Color32::from_rgb(100, 160, 220);
+
+        // Widgets - rounded, subtle
+        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(35, 35, 35);
+        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(45, 45, 45);
+        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(60, 60, 65);
+        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(70, 100, 130);
+
+        // Reduce corner rounding for modern look
+        visuals.widgets.noninteractive.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.inactive.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.hovered.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.active.rounding = egui::Rounding::same(4.0);
+
+        // Window rounding
+        visuals.window_rounding = egui::Rounding::same(8.0);
+
+        cc.egui_ctx.set_visuals(visuals);
+
+        // Set up fonts with slightly larger text
+        let mut style = (*cc.egui_ctx.style()).clone();
+        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        style.spacing.button_padding = egui::vec2(8.0, 4.0);
+        cc.egui_ctx.set_style(style);
+
         Self {
             playback_state: PlaybackState::Idle,
             media_info: None,
@@ -165,10 +208,13 @@ impl SlainApp {
             audio_player: None, // Lazy init on file load
             pipeline: PipelineKind::SoftwareOnly,
             pipeline_manager: None, // Lazy init on file load
+            preferred_decoder: None, // Auto-detect best decoder
             video_texture: None,
             frame_width: 1920,
             frame_height: 1080,
             last_frame_time: Instant::now(),
+            playback_start_time: None,
+            last_displayed_pts: 0,
             show_osd: true,
             is_fullscreen: false,
             show_settings: false,
@@ -192,7 +238,12 @@ impl SlainApp {
     /// Open a media file using slain-core parsers
     fn open_file(&mut self, path: PathBuf) {
         tracing::info!("Opening: {:?}", path);
-        
+
+        // Reset playback state
+        self.playback_start_time = None;
+        self.last_displayed_pts = 0;
+        self.current_time_ms = 0;
+
         // Determine file type by extension
         let ext = path.extension()
             .and_then(|e| e.to_str())
@@ -228,10 +279,10 @@ impl SlainApp {
                 // Find video track for dimensions
                 for track in &info.tracks {
                     if let MkvTrack::Video(v) = track {
-                        self.frame_width = v.width;
-                        self.frame_height = v.height;
-                        tracing::info!("Video: {}x{} @ {} fps", 
-                            v.width, v.height, v.frame_rate.unwrap_or(0.0));
+                        self.frame_width = v.pixel_width;
+                        self.frame_height = v.pixel_height;
+                        tracing::info!("Video: {}x{} @ {} fps",
+                            v.pixel_width, v.pixel_height, v.frame_rate.unwrap_or(0.0));
                         
                         // Find best decoder for codec
                         let codec = match v.codec_id.as_str() {
@@ -296,23 +347,72 @@ impl SlainApp {
     
     fn open_mp4(&mut self, path: &PathBuf) {
         self.playback_state = PlaybackState::Loading;
-        
-        // Use MP4 demuxer from slain-core
         tracing::info!("Opening MP4: {:?}", path);
-        // TODO: Wire up mp4_demux module fully
-        
-        // For now, try audio
-        if self.audio_player.is_none() {
-            self.audio_player = Some(AudioPlayer::new());
-        }
-        if let Some(ref mut player) = self.audio_player {
-            if let Err(e) = player.play_file(path) {
-                tracing::warn!("Audio failed: {}", e);
+
+        // Parse MP4 to get duration and video info
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!("Failed to open MP4: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
+                return;
+            }
+        };
+        let reader = BufReader::new(file);
+
+        match Mp4Demuxer::new(reader) {
+            Ok(demuxer) => {
+                // Get duration
+                self.duration_ms = (demuxer.duration_us() / 1000) as u64;
+
+                // Find video track for dimensions
+                for (idx, stream) in demuxer.streams().iter().enumerate() {
+                    if matches!(stream.codec_type, slain_core::mp4_demux::CodecType::Video) {
+                        if let Some(vi) = demuxer.video_info(idx) {
+                            self.frame_width = vi.width;
+                            self.frame_height = vi.height;
+                            tracing::info!("MP4 Video: {}x{}, duration: {}ms",
+                                vi.width, vi.height, self.duration_ms);
+                        }
+                        break;
+                    }
+                }
+
+                self.video_path = Some(path.clone());
+
+                // Stop any existing decode thread
+                self.stop_decode_thread();
+
+                // Start decode thread
+                let shared = self.shared.clone();
+                let video_path = path.clone();
+                let width = self.frame_width;
+                let height = self.frame_height;
+
+                self.decode_thread = Some(thread::spawn(move || {
+                    decode_loop(shared, video_path, width, height);
+                }));
+
+                // Start audio playback
+                if self.audio_player.is_none() {
+                    self.audio_player = Some(AudioPlayer::new());
+                }
+                if let Some(ref mut player) = self.audio_player {
+                    if let Err(e) = player.play_file(path) {
+                        tracing::warn!("Audio failed: {}", e);
+                    }
+                }
+
+                self.playback_state = PlaybackState::Ready;
+            }
+            Err(e) => {
+                tracing::error!("MP4 parse error: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
             }
         }
-        
-        // MP4 stub - set ready for now
-        self.playback_state = PlaybackState::Ready;
     }
     
     fn open_avi(&mut self, path: &PathBuf) {
@@ -378,17 +478,22 @@ impl SlainApp {
     
     fn seek(&mut self, time_ms: u64) {
         self.current_time_ms = time_ms.min(self.duration_ms);
-        
+
         // Request seek in decode thread
         self.shared.seek_target_ms.store(self.current_time_ms, Ordering::SeqCst);
         self.shared.seek_requested.store(true, Ordering::SeqCst);
-        
+
+        // Reset playback timer to sync with new position
+        if self.is_playing() {
+            self.playback_start_time = Some(Instant::now() - Duration::from_millis(time_ms));
+        }
+
         // TODO: Seek in audio
     }
     
     fn set_volume(&mut self, vol: f32) {
         self.volume = vol.clamp(0.0, 1.0);
-        // TODO: Set audio volume
+        let _ = audio_set_volume(self.volume);
     }
     
     fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
@@ -409,40 +514,72 @@ impl eframe::App for SlainApp {
         // Request continuous repaints when playing
         if self.is_playing() {
             ctx.request_repaint();
-            
+
+            // Initialize playback start time on first play
+            if self.playback_start_time.is_none() {
+                self.playback_start_time = Some(Instant::now());
+                self.last_displayed_pts = 0;
+            }
+
             // Sync state from shared
             self.current_time_ms = self.shared.current_time_ms.load(Ordering::Relaxed);
+        } else {
+            // Reset playback timer when paused
+            self.playback_start_time = None;
         }
-        
-        // Pull frame from queue and upload to texture
-        if let Some(frame) = self.shared.frame_queue.lock().pop_front() {
-            // Calculate FPS
-            let now = Instant::now();
-            let delta = now.duration_since(self.last_frame_time);
-            if delta.as_secs_f32() > 0.0 {
-                self.fps = 1.0 / delta.as_secs_f32();
+
+        // Pull frame from queue with PTS-based timing
+        let should_display = if let Some(start_time) = self.playback_start_time {
+            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+
+            // Peek at next frame to check its PTS
+            let queue = self.shared.frame_queue.lock();
+            if let Some(frame) = queue.front() {
+                // Display frame if its PTS has arrived, or if we're behind
+                frame.pts_ms <= elapsed_ms + 5 // 5ms tolerance
+            } else {
+                false
             }
-            self.last_frame_time = now;
-            self.frame_count += 1;
-            
-            // Upload to GPU texture
-            let image = ColorImage::from_rgb(
-                [frame.width as usize, frame.height as usize],
-                &frame.data,
-            );
-            
-            self.video_texture = Some(ctx.load_texture(
-                "video_frame",
-                image,
-                TextureOptions::LINEAR,
-            ));
-            
-            self.frame_width = frame.width;
-            self.frame_height = frame.height;
+        } else {
+            // Not playing, but still show first frame if available
+            !self.shared.frame_queue.lock().is_empty()
+        };
+
+        if should_display {
+            if let Some(frame) = self.shared.frame_queue.lock().pop_front() {
+                // Calculate FPS
+                let now = Instant::now();
+                let delta = now.duration_since(self.last_frame_time);
+                if delta.as_secs_f32() > 0.0 {
+                    self.fps = 1.0 / delta.as_secs_f32();
+                }
+                self.last_frame_time = now;
+                self.frame_count += 1;
+                self.last_displayed_pts = frame.pts_ms;
+
+                // Upload to GPU texture
+                let image = ColorImage::from_rgb(
+                    [frame.width as usize, frame.height as usize],
+                    &frame.data,
+                );
+
+                self.video_texture = Some(ctx.load_texture(
+                    "video_frame",
+                    image,
+                    TextureOptions::LINEAR,
+                ));
+
+                self.frame_width = frame.width;
+                self.frame_height = frame.height;
+            }
         }
         
-        // Menu bar
-        egui::TopBottomPanel::top("menu").show(ctx, |ui| {
+        // Menu bar - subtle, minimal
+        egui::TopBottomPanel::top("menu")
+            .frame(egui::Frame::none()
+                .fill(egui::Color32::from_rgb(25, 25, 28))
+                .inner_margin(egui::Margin::symmetric(8.0, 4.0)))
+            .show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open...").clicked() {
@@ -488,7 +625,50 @@ impl eframe::App for SlainApp {
                 
                 ui.menu_button("Audio", |ui| {
                     ui.label("Volume:");
+                    let old_vol = self.volume;
                     ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false));
+                    if self.volume != old_vol {
+                        let _ = audio_set_volume(self.volume);
+                    }
+                });
+
+                ui.menu_button("Decoder", |ui| {
+                    let decoders = available_decoders();
+
+                    // Auto option
+                    let is_auto = self.preferred_decoder.is_none();
+                    if ui.radio(is_auto, "Auto (best available)").clicked() {
+                        self.preferred_decoder = None;
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
+                    // List available decoders
+                    for dec in &decoders {
+                        let is_selected = self.preferred_decoder == Some(*dec);
+                        let label = match dec {
+                            HwDecoderType::Nvdec => "NVIDIA NVDEC",
+                            HwDecoderType::Amf => "AMD AMF",
+                            HwDecoderType::Vaapi => "VA-API (Linux)",
+                            HwDecoderType::Software => "Software (CPU)",
+                        };
+                        if ui.radio(is_selected, label).clicked() {
+                            self.preferred_decoder = Some(*dec);
+                            ui.close_menu();
+                        }
+                    }
+
+                    ui.separator();
+                    ui.label(format!("Current: {}", self.decoder_name));
+                });
+
+                ui.menu_button("Settings", |ui| {
+                    ui.checkbox(&mut self.show_osd, "Show OSD overlay");
+                    ui.separator();
+                    ui.label(format!("Resolution: {}x{}", self.frame_width, self.frame_height));
+                    ui.label(format!("FPS: {:.1}", self.fps));
+                    ui.label(format!("Frames: {} (dropped: {})", self.frame_count, self.dropped_frames));
                 });
             });
         });
@@ -571,7 +751,8 @@ impl eframe::App for SlainApp {
                         rect.min + egui::vec2(10.0, 10.0),
                         egui::vec2(250.0, 140.0),
                     );
-                    
+
+                    #[allow(deprecated)]
                     ui.allocate_ui_at_rect(osd_rect, |ui| {
                         egui::Frame::popup(ui.style())
                             .fill(egui::Color32::from_black_alpha(200))
@@ -592,68 +773,146 @@ impl eframe::App for SlainApp {
                 }
             });
         
-        // Bottom controls
+        // Bottom controls - styled like modern video player
         egui::TopBottomPanel::bottom("controls")
-            .min_height(60.0)
+            .frame(egui::Frame::none()
+                .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 22, 240))
+                .inner_margin(egui::Margin::symmetric(16.0, 8.0)))
+            .min_height(70.0)
             .show(ctx, |ui| {
-                ui.add_space(8.0);
-                
-                // Seek bar
+                // Progress bar - full width, thin
                 let mut time_sec = self.current_time_ms as f64 / 1000.0;
                 let duration_sec = self.duration_ms as f64 / 1000.0;
-                
+
+                // Custom progress bar styling
+                let progress = if duration_sec > 0.0 { time_sec / duration_sec } else { 0.0 };
+                let bar_height = 4.0;
+                let bar_rect = ui.available_rect_before_wrap();
+                let bar_rect = egui::Rect::from_min_size(
+                    bar_rect.min,
+                    egui::vec2(bar_rect.width(), bar_height),
+                );
+
+                // Background track
+                ui.painter().rect_filled(
+                    bar_rect,
+                    egui::Rounding::same(2.0),
+                    egui::Color32::from_rgb(50, 50, 55),
+                );
+
+                // Progress fill
+                let fill_rect = egui::Rect::from_min_size(
+                    bar_rect.min,
+                    egui::vec2(bar_rect.width() * progress as f32, bar_height),
+                );
+                ui.painter().rect_filled(
+                    fill_rect,
+                    egui::Rounding::same(2.0),
+                    egui::Color32::from_rgb(80, 140, 200),
+                );
+
+                // Invisible slider for interaction
                 let slider = egui::Slider::new(&mut time_sec, 0.0..=duration_sec.max(1.0))
-                    .show_value(false)
-                    .trailing_fill(true);
-                    
-                if ui.add(slider).changed() {
+                    .show_value(false);
+
+                let response = ui.add(slider);
+                if response.changed() {
                     self.seek((time_sec * 1000.0) as u64);
                 }
-                
+
+                ui.add_space(8.0);
+
                 ui.horizontal(|ui| {
-                    // Play/Pause
+                    ui.spacing_mut().item_spacing.x = 12.0;
+
+                    // Play/Pause - larger, prominent
                     let icon = if self.is_playing() { "⏸" } else { "▶" };
-                    if ui.button(egui::RichText::new(icon).size(20.0)).clicked() {
+                    let btn = egui::Button::new(
+                        egui::RichText::new(icon).size(24.0).color(egui::Color32::WHITE)
+                    ).fill(egui::Color32::TRANSPARENT);
+                    if ui.add(btn).clicked() {
                         self.toggle_play();
                     }
-                    
+
+                    // Skip back 10s
+                    let btn = egui::Button::new(
+                        egui::RichText::new("⏪").size(18.0).color(egui::Color32::from_gray(180))
+                    ).fill(egui::Color32::TRANSPARENT);
+                    if ui.add(btn).clicked() {
+                        let new_time = self.current_time_ms.saturating_sub(10000);
+                        self.seek(new_time);
+                    }
+
+                    // Skip forward 10s
+                    let btn = egui::Button::new(
+                        egui::RichText::new("⏩").size(18.0).color(egui::Color32::from_gray(180))
+                    ).fill(egui::Color32::TRANSPARENT);
+                    if ui.add(btn).clicked() {
+                        let new_time = (self.current_time_ms + 10000).min(self.duration_ms);
+                        self.seek(new_time);
+                    }
+
                     // Stop
-                    if ui.button(egui::RichText::new("⏹").size(20.0)).clicked() {
+                    let btn = egui::Button::new(
+                        egui::RichText::new("⏹").size(18.0).color(egui::Color32::from_gray(180))
+                    ).fill(egui::Color32::TRANSPARENT);
+                    if ui.add(btn).clicked() {
                         self.playback_state = PlaybackState::Ready;
                         self.shared.is_playing.store(false, Ordering::SeqCst);
                         self.current_time_ms = 0;
                     }
                     
-                    // Time display
-                    ui.label(format!(
-                        "{} / {}",
-                        format_time(self.current_time_ms),
-                        format_time(self.duration_ms)
-                    ));
-                    
+                    // Time display - styled
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} / {}",
+                            format_time(self.current_time_ms),
+                            format_time(self.duration_ms)
+                        ))
+                        .size(13.0)
+                        .color(egui::Color32::from_gray(200))
+                    );
+
                     // Right side controls
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+
                         // Fullscreen
-                        if ui.button(egui::RichText::new("⛶").size(18.0)).clicked() {
+                        let btn = egui::Button::new(
+                            egui::RichText::new("⛶").size(18.0).color(egui::Color32::from_gray(180))
+                        ).fill(egui::Color32::TRANSPARENT);
+                        if ui.add(btn).clicked() {
                             self.toggle_fullscreen(ctx);
                         }
-                        
-                        // Volume slider
+
+                        // Volume slider - compact
+                        let old_vol = self.volume;
                         ui.add(
                             egui::Slider::new(&mut self.volume, 0.0..=1.0)
                                 .show_value(false)
-                                .fixed_decimals(0)
                         );
-                        
-                        // Volume icon
-                        let vol_icon = if self.volume == 0.0 { "🔇" } 
-                            else if self.volume < 0.5 { "🔉" } 
+                        if self.volume != old_vol {
+                            let _ = audio_set_volume(self.volume);
+                        }
+
+                        // Volume icon - clickable to mute
+                        let vol_icon = if self.volume == 0.0 { "🔇" }
+                            else if self.volume < 0.5 { "🔉" }
                             else { "🔊" };
-                        ui.label(vol_icon);
+                        let btn = egui::Button::new(
+                            egui::RichText::new(vol_icon).size(16.0)
+                        ).fill(egui::Color32::TRANSPARENT);
+                        if ui.add(btn).clicked() {
+                            // Toggle mute
+                            if self.volume > 0.0 {
+                                self.volume = 0.0;
+                            } else {
+                                self.volume = 1.0;
+                            }
+                            let _ = audio_set_volume(self.volume);
+                        }
                     });
                 });
-                
-                ui.add_space(4.0);
             });
         
         // Handle drag & drop
@@ -779,7 +1038,7 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
     let (vid_w, vid_h) = info.tracks.iter()
         .find_map(|t| {
             if let MkvTrack::Video(v) = t {
-                Some((v.width, v.height))
+                Some((v.pixel_width, v.pixel_height))
             } else {
                 None
             }
@@ -793,15 +1052,15 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
         codec: HwCodec::H264, // TODO: Detect from codec_id
         width: vid_w,
         height: vid_h,
-        preferred_backend: Some(HwDecoderType::Software),
+        preferred_backend: None,  // Auto-detect best available
         allow_software_fallback: true,
         extra_data: None,
     };
     
     let mut decoder = HwDecoder::new(config)?;
     
-    let mut frame_number: u64 = 0;
-    
+    let mut _frame_number: u64 = 0;
+
     while !shared.should_stop.load(Ordering::SeqCst) {
         if !shared.is_playing.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_millis(10));
@@ -876,8 +1135,8 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
                             height: decoded.height,
                             pts_ms,
                         });
-                        
-                        frame_number += 1;
+
+                        _frame_number += 1;
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -933,9 +1192,9 @@ fn decode_mp4(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
         codec: HwCodec::H264, // Assume H.264 for now
         width: vid_w,
         height: vid_h,
-        preferred_backend: Some(HwDecoderType::Software),
+        preferred_backend: None,  // Auto-detect best available
         allow_software_fallback: true,
-        extra_data: video_info.extra_data.clone(),
+        extra_data: Some(video_info.extra_data.clone()),
     };
     
     let mut decoder = HwDecoder::new(config)?;
@@ -1008,9 +1267,9 @@ fn decode_mp4(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
                             continue;
                         }
                         
-                        // Calculate PTS in milliseconds
-                        let pts_ms = if packet.pts > 0 {
-                            (packet.pts as u64 * 1000) / 90000 // Assume 90kHz timescale
+                        // Use pre-calculated PTS in milliseconds from demuxer
+                        let pts_ms = if packet.pts_ms > 0 {
+                            packet.pts_ms as u64
                         } else {
                             frame_number * 33
                         };

@@ -88,5 +88,8 @@ winit = "0.30"
 # Parallel processing (optional)
 rayon = { version = "1.10", optional = true }
 
+# POSIX libc bindings for low-level system calls
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

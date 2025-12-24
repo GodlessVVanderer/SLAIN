@@ -2754,13 +2754,13 @@ impl LavVideo {
         // Decode the NAL unit
         match decoder.decode(&data) {
             Ok(Some(yuv)) => {
-                let (width, height) = yuv.dimension_rgb();
-                let strides = yuv.strides_yuv();
+                let (width, height) = yuv.dimensions();
+                let strides = yuv.strides();
 
                 // Get Y, U, V planes
-                let y_plane = yuv.y_with_stride();
-                let u_plane = yuv.u_with_stride();
-                let v_plane = yuv.v_with_stride();
+                let y_plane = yuv.y();
+                let u_plane = yuv.u();
+                let v_plane = yuv.v();
 
                 // Calculate actual dimensions
                 let y_stride = strides.0;

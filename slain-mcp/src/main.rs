@@ -21,7 +21,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use slain_core::gpu::{gpu_manager, GpuDevice, GpuState, GpuVendor};
+use slain_core::gpu::gpu_manager;
+use slain_core::benchmark::{Benchmarker, BenchmarkConfig, SyntheticH264};
+use slain_core::hw_decode::{available_decoders, HwDecoder, HwCodec, DecoderConfig};
 use std::io::{self, BufRead, Write};
 use tracing::{debug, error, info, warn};
 
@@ -65,6 +67,7 @@ struct Tool {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct ToolResult {
     content: Vec<ToolContent>,
     #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
@@ -72,6 +75,7 @@ struct ToolResult {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct ToolContent {
     #[serde(rename = "type")]
     content_type: String,
@@ -604,30 +608,135 @@ impl McpServer {
     }
 
     fn tool_benchmark_decode(&self, args: &Value) -> Result<String, String> {
-        let codec = args["codec"].as_str().unwrap_or("h264");
+        let codec_str = args["codec"].as_str().unwrap_or("h264");
         let resolution = args["resolution"].as_str().unwrap_or("1080p");
-        
-        // TODO: Implement real benchmarks
-        Ok(format!(
-            "Decode benchmark not yet implemented.\n\n\
-             Codec: {}\n\
-             Resolution: {}\n\n\
-             This will benchmark:\n\
-             - Software decode (OpenH264/dav1d)\n\
-             - Hardware decode (NVDEC/VCN)\n\
-             - Report FPS and frame times",
-            codec, resolution
-        ))
+
+        // Parse resolution
+        let (width, height) = match resolution {
+            "720p" => (1280, 720),
+            "1080p" => (1920, 1080),
+            "1440p" | "2k" => (2560, 1440),
+            "4k" | "2160p" => (3840, 2160),
+            _ => (1920, 1080),
+        };
+
+        // Parse codec
+        let codec = match codec_str.to_lowercase().as_str() {
+            "h264" | "avc" => HwCodec::H264,
+            "h265" | "hevc" => HwCodec::H265,
+            "vp9" => HwCodec::VP9,
+            "av1" => HwCodec::AV1,
+            _ => HwCodec::H264,
+        };
+
+        let mut results = String::new();
+        results.push_str(&format!("═══════════════════════════════════════════════════════════\n"));
+        results.push_str(&format!("  SLAIN Decode Benchmark - {} @ {}\n", codec_str.to_uppercase(), resolution));
+        results.push_str(&format!("═══════════════════════════════════════════════════════════\n\n"));
+
+        // List available decoders
+        let decoders = available_decoders();
+        results.push_str(&format!("  Available decoders: {:?}\n\n", decoders));
+
+        // Benchmark each available decoder
+        for decoder_type in &decoders {
+            let config = DecoderConfig {
+                codec,
+                width,
+                height,
+                preferred_backend: Some(*decoder_type),
+                allow_software_fallback: false,
+                extra_data: None,
+            };
+
+            let decoder_name = format!("{:?}", decoder_type);
+            results.push_str(&format!("  Testing {}...\n", decoder_name));
+
+            match HwDecoder::new(config) {
+                Ok(mut decoder) => {
+                    let bench_config = BenchmarkConfig {
+                        name: format!("{} {} {}", decoder_name, codec_str, resolution),
+                        warmup_frames: 10,
+                        test_frames: 100,
+                        target_fps: if height >= 2160 { 60.0 } else { 60.0 },
+                        codec: codec_str.to_uppercase(),
+                        width,
+                        height,
+                    };
+
+                    let mut benchmarker = Benchmarker::new(bench_config);
+                    benchmarker.start();
+
+                    // Generate synthetic test frames using H.264 test pattern generator
+                    let mut h264_gen = SyntheticH264::new(width, height);
+                    let test_frames = h264_gen.generate_sequence(120, 30);
+
+                    for (i, frame_data) in test_frames.iter().enumerate() {
+                        let start = std::time::Instant::now();
+                        let is_keyframe = i % 30 == 0;
+
+                        match decoder.decode(frame_data, i as i64 * 33) {
+                            Ok(_) => {
+                                let decode_time = start.elapsed();
+                                benchmarker.record_frame(decode_time, frame_data.len(), is_keyframe);
+                            }
+                            Err(_) => {}
+                        }
+
+                        if benchmarker.is_complete() {
+                            break;
+                        }
+                    }
+
+                    let result = benchmarker.finish(&decoder_name);
+                    results.push_str(&format!("    {} FPS: {:.1}, Median: {:.2}ms\n",
+                        result.rating.emoji(),
+                        result.stats.fps,
+                        result.stats.median_us as f64 / 1000.0));
+                }
+                Err(e) => {
+                    results.push_str(&format!("    ❌ Failed to initialize: {}\n", e));
+                }
+            }
+        }
+
+        results.push_str(&format!("\n═══════════════════════════════════════════════════════════\n"));
+
+        Ok(results)
     }
 
     fn tool_benchmark_memory(&self, _args: &Value) -> Result<String, String> {
-        // TODO: Implement VRAM bandwidth test
-        Ok("VRAM bandwidth benchmark not yet implemented.\n\n\
-            This will test:\n\
-            - Read bandwidth (GB/s)\n\
-            - Write bandwidth (GB/s)\n\
-            - Copy bandwidth (GB/s)\n\
-            - Latency (ns)".into())
+        let mut results = String::new();
+        results.push_str("═══════════════════════════════════════════════════════════\n");
+        results.push_str("  SLAIN VRAM Bandwidth Benchmark\n");
+        results.push_str("═══════════════════════════════════════════════════════════\n\n");
+
+        // Get GPU info
+        let manager = gpu_manager().read();
+        let gpus = manager.devices();
+
+        if gpus.is_empty() {
+            return Ok("No GPUs detected for memory benchmark.".into());
+        }
+
+        for gpu in gpus {
+            results.push_str(&format!("  GPU: {}\n", gpu.name));
+            results.push_str(&format!("  VRAM: {} MB\n\n", gpu.vram_mb));
+
+            // Estimate theoretical bandwidth based on memory type
+            let theoretical_bandwidth = match gpu.vram_mb {
+                v if v >= 16000 => 1000.0, // High-end (GDDR6X)
+                v if v >= 8000 => 500.0,   // Mid-range (GDDR6)
+                _ => 200.0,                 // Entry-level
+            };
+
+            results.push_str(&format!("  Estimated bandwidth: ~{:.0} GB/s\n", theoretical_bandwidth));
+            results.push_str("  (Full bandwidth test requires wgpu compute shaders)\n");
+        }
+
+        results.push_str("\n═══════════════════════════════════════════════════════════\n");
+
+        Ok(results)
     }
 
     // ========================================================================
@@ -763,11 +872,11 @@ impl McpServer {
         let script = args["script"].as_str();
         
         let desc = match pipeline {
-            "direct" => "Direct passthrough (no processing)".into(),
-            "avisynth" => "AviSynth filter chain (DLL FFI)".into(),
-            "vapoursynth" => "VapourSynth Python filters (DLL FFI)".into(),
-            "vulkan" => "Vulkan compute shaders (wgpu)".into(),
-            "cuda" => "CUDA kernels (DLL FFI)".into(),
+            "direct" => "Direct passthrough (no processing)",
+            "avisynth" => "AviSynth filter chain (DLL FFI)",
+            "vapoursynth" => "VapourSynth Python filters (DLL FFI)",
+            "vulkan" => "Vulkan compute shaders (wgpu)",
+            "cuda" => "CUDA kernels (DLL FFI)",
             _ => return Err(format!("Unknown pipeline: {}", pipeline)),
         };
         
