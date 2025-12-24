@@ -363,8 +363,18 @@ impl<R: Read + Seek> EbmlReader<R> {
         self.position += 1;
 
         let leading_zeros = first_byte[0].leading_zeros();
-        if leading_zeros > 3 {
-            return Err("Invalid element ID".to_string());
+        // EBML element IDs: 1-4 bytes with 0-3 leading zeros
+        // Allow 4 leading zeros for better compatibility with some MKV variants
+        if leading_zeros > 4 {
+            return Err(format!("Invalid element ID: byte 0x{:02X} at position {}",
+                first_byte[0], self.position - 1));
+        }
+        // Handle edge case: 4 leading zeros means we might have padding or corruption
+        if leading_zeros == 4 {
+            // Skip null bytes (padding) and try again
+            if first_byte[0] == 0x00 {
+                return self.read_element_id();
+            }
         }
 
         let length = (leading_zeros + 1) as usize;

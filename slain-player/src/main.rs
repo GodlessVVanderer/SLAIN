@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 // Import from our core library - NOT rewriting
 use slain_core::mkv::{MkvParser, MkvInfo, MkvTrack, MkvDemuxer, MkvPacket};
 use slain_core::mp4_demux::{Packet, mp4::Mp4Demuxer};
-use slain_core::audio::AudioPlayer;
+use slain_core::audio::{AudioPlayer, audio_set_volume};
 use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecodedFrame, DecoderConfig};
 use slain_core::pixel_convert::{PixelConverter, VideoFrame as PxVideoFrame, PixelFormat as PxFormat, ColorSpace};
 use slain_core::bandwidth::{window_monitor, AttentionState};
@@ -132,6 +132,9 @@ struct SlainApp {
     // Pipeline selection
     pipeline: PipelineKind,
     pipeline_manager: Option<PipelineManager>,
+
+    // Decoder preference
+    preferred_decoder: Option<HwDecoderType>,
     
     // Display
     video_texture: Option<TextureHandle>,
@@ -165,6 +168,7 @@ impl SlainApp {
             audio_player: None, // Lazy init on file load
             pipeline: PipelineKind::SoftwareOnly,
             pipeline_manager: None, // Lazy init on file load
+            preferred_decoder: None, // Auto-detect best decoder
             video_texture: None,
             frame_width: 1920,
             frame_height: 1080,
@@ -388,7 +392,7 @@ impl SlainApp {
     
     fn set_volume(&mut self, vol: f32) {
         self.volume = vol.clamp(0.0, 1.0);
-        // TODO: Set audio volume
+        let _ = audio_set_volume(self.volume);
     }
     
     fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
@@ -488,7 +492,50 @@ impl eframe::App for SlainApp {
                 
                 ui.menu_button("Audio", |ui| {
                     ui.label("Volume:");
+                    let old_vol = self.volume;
                     ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false));
+                    if self.volume != old_vol {
+                        let _ = audio_set_volume(self.volume);
+                    }
+                });
+
+                ui.menu_button("Decoder", |ui| {
+                    let decoders = available_decoders();
+
+                    // Auto option
+                    let is_auto = self.preferred_decoder.is_none();
+                    if ui.radio(is_auto, "Auto (best available)").clicked() {
+                        self.preferred_decoder = None;
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
+                    // List available decoders
+                    for dec in &decoders {
+                        let is_selected = self.preferred_decoder == Some(*dec);
+                        let label = match dec {
+                            HwDecoderType::Nvdec => "NVIDIA NVDEC",
+                            HwDecoderType::Amf => "AMD AMF",
+                            HwDecoderType::Vaapi => "VA-API (Linux)",
+                            HwDecoderType::Software => "Software (CPU)",
+                        };
+                        if ui.radio(is_selected, label).clicked() {
+                            self.preferred_decoder = Some(*dec);
+                            ui.close_menu();
+                        }
+                    }
+
+                    ui.separator();
+                    ui.label(format!("Current: {}", self.decoder_name));
+                });
+
+                ui.menu_button("Settings", |ui| {
+                    ui.checkbox(&mut self.show_osd, "Show OSD overlay");
+                    ui.separator();
+                    ui.label(format!("Resolution: {}x{}", self.frame_width, self.frame_height));
+                    ui.label(format!("FPS: {:.1}", self.fps));
+                    ui.label(format!("Frames: {} (dropped: {})", self.frame_count, self.dropped_frames));
                 });
             });
         });
@@ -639,11 +686,15 @@ impl eframe::App for SlainApp {
                         }
                         
                         // Volume slider
+                        let old_vol = self.volume;
                         ui.add(
                             egui::Slider::new(&mut self.volume, 0.0..=1.0)
                                 .show_value(false)
                                 .fixed_decimals(0)
                         );
+                        if self.volume != old_vol {
+                            let _ = audio_set_volume(self.volume);
+                        }
                         
                         // Volume icon
                         let vol_icon = if self.volume == 0.0 { "🔇" } 
