@@ -256,7 +256,7 @@ pub mod mp4 {
     }
 
     impl<R: Read + Seek> Mp4Demuxer<R> {
-        pub fn new(mut reader: R) -> Result<Self, String> {
+        pub fn new(reader: R) -> Result<Self, String> {
             let mut demuxer = Self {
                 reader,
                 duration: 0,

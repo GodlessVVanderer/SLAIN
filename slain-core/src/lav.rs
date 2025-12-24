@@ -36,6 +36,7 @@ use std::path::Path;
 use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use openh264::formats::YUVSource;
 
 // ============================================================================
 // Error Types

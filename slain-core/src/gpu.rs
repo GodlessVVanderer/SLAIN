@@ -644,7 +644,7 @@ impl NvapiLoader {
             power_limit_w: None,
             gpu_usage_percent: gpu_usage,
             mem_usage_percent: if vram_used + vram_free > 0 {
-                (vram_used * 100 / (vram_used + vram_free))
+                vram_used * 100 / (vram_used + vram_free)
             } else {
                 0
             },
@@ -1025,7 +1025,7 @@ impl AdlLoader {
             power_limit_w: None,
             gpu_usage_percent: gpu_usage,
             mem_usage_percent: if vram_used + vram_free > 0 {
-                (vram_used * 100 / (vram_used + vram_free))
+                vram_used * 100 / (vram_used + vram_free)
             } else {
                 0
             },
