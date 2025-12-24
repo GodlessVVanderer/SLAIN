@@ -556,7 +556,7 @@ impl NvapiLoader {
         
         let status = unsafe { enum_fn(handles.as_mut_ptr(), &mut count) };
         if status != NVAPI_OK || device_index >= count {
-            return Err(GpuError::DeviceNotFound(device_index));
+            return Err(GpuError::DeviceNotFound(device_index as usize));
         }
         
         let handle = handles[device_index as usize];

@@ -572,35 +572,36 @@ impl RtmpStreamer {
             VideoEncoder::Qsv => vec!["-c:v", "h264_qsv", "-preset", "veryfast"],
             VideoEncoder::Amf => vec!["-c:v", "h264_amf", "-quality", "speed"],
         };
-        
+
         let rtmp_url = format!("{}/{}", self.config.server_url, self.config.stream_key);
-        
-        #[cfg(target_os = "windows")]
-        let capture_args = vec!["-f", "gdigrab", "-framerate", &self.config.fps.to_string(), "-i", "desktop"];
-        
-        #[cfg(target_os = "linux")]
-        let capture_args = vec!["-f", "x11grab", "-framerate", &self.config.fps.to_string(), "-i", ":0.0"];
-        
-        #[cfg(target_os = "macos")]
-        let capture_args = vec!["-f", "avfoundation", "-framerate", &self.config.fps.to_string(), "-i", "1:0"];
-        
+        let fps_str = self.config.fps.to_string();
         let bitrate_str = format!("{}k", self.config.bitrate_kbps);
+        let bufsize_str = format!("{}k", self.config.bitrate_kbps * 2);
         let audio_bitrate_str = format!("{}k", self.config.audio_bitrate);
-        
+
+        #[cfg(target_os = "windows")]
+        let capture_args = vec!["-f", "gdigrab", "-framerate", &fps_str, "-i", "desktop"];
+
+        #[cfg(target_os = "linux")]
+        let capture_args = vec!["-f", "x11grab", "-framerate", &fps_str, "-i", ":0.0"];
+
+        #[cfg(target_os = "macos")]
+        let capture_args = vec!["-f", "avfoundation", "-framerate", &fps_str, "-i", "1:0"];
+
         let mut cmd = Command::new("ffmpeg");
         cmd.args(&capture_args)
             .args(&encoder_args)
-            .args(&["-b:v", &bitrate_str, "-maxrate", &bitrate_str, "-bufsize", &format!("{}k", self.config.bitrate_kbps * 2)])
+            .args(&["-b:v", &bitrate_str, "-maxrate", &bitrate_str, "-bufsize", &bufsize_str])
             .args(&["-c:a", "aac", "-b:a", &audio_bitrate_str])
             .args(&["-f", "flv", &rtmp_url])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        
+
         let child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
-        
+
         *RTMP_PROCESS.lock() = Some(child);
-        
+
         Ok(())
     }
 
@@ -767,7 +768,7 @@ impl LocalStreamServer {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public API
 // ============================================================================
 
 

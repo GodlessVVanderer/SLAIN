@@ -448,9 +448,8 @@ fn get_keydb_paths() -> Vec<PathBuf> {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public API
 // ============================================================================
-
 
 pub fn get_disc_drives() -> Vec<DriveInfo> {
     detect_disc_drives()
