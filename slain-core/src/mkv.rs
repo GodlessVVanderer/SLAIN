@@ -630,11 +630,11 @@ impl MkvParser {
             }
         }
 
-        if doc_type != "matroska" && doc_type != "webm" {
-            return Err(format!("Unsupported document type: {}", doc_type));
+        // Accept matroska, webm, or empty (assume matroska for compatibility)
+        match doc_type.as_str() {
+            "matroska" | "webm" | "" => Ok(()),
+            _ => Err(format!("Unsupported document type: {}", doc_type)),
         }
-
-        Ok(())
     }
 
     fn parse_segment_info<R: Read + Seek>(

@@ -751,16 +751,19 @@ impl VaapiDecoder {
     
     /// Flush decoder
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
-        let mut frames = Vec::new();
-
         #[cfg(target_os = "linux")]
         {
+            let mut frames = Vec::new();
             while let Ok(Some(frame)) = self.get_completed_frame() {
                 frames.push(frame);
             }
+            frames
         }
 
-        frames
+        #[cfg(not(target_os = "linux"))]
+        {
+            Vec::new()
+        }
     }
     
     /// Get decoder info

@@ -91,5 +91,11 @@ rayon = { version = "1.10", optional = true }
 # POSIX libc bindings for low-level system calls
 libc = "0.2"
 
+# SQLite for message board
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Temp files for tests
+tempfile = "3.10"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

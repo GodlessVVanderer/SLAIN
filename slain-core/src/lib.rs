@@ -77,6 +77,8 @@ pub mod retro_tv;
 // ============================================================================
 pub mod aegis;
 pub mod forumyze;
+pub mod legal_evidence;
+pub mod message_board;
 pub mod cosmic_movie;
 pub mod starlight;
 pub mod block_mirror;
