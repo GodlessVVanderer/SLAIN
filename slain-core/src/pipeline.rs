@@ -608,6 +608,7 @@ impl PipelineManager {
     }
     
     /// Get available pipelines on this system
+    #[allow(unused_mut)]
     pub fn available(&self) -> Vec<PipelineKind> {
         let mut list = vec![PipelineKind::Direct];
 

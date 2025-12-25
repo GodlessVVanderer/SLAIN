@@ -37,6 +37,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use wgpu::util::DeviceExt;
 
 // ============================================================================
 // Filter Parameters
@@ -990,7 +991,7 @@ impl FilterProcessor {
         // Poll device until map is complete
         self.device.poll(wgpu::Maintain::Wait);
 
-        if rx.recv().ok().flatten().is_ok() {
+        if rx.recv().map(|r| r.is_ok()).unwrap_or(false) {
             let data = buffer_slice.get_mapped_range();
             let len = output.len().min(data.len());
             output[..len].copy_from_slice(&data[..len]);

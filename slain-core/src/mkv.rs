@@ -417,6 +417,68 @@ impl<R: Read + Seek> MkvDemuxer<R> {
 // Public API Functions
 // ============================================================================
 
+fn is_text_subtitle(codec_id: &str) -> bool {
+    matches!(codec_id, 
+        "S_TEXT/UTF8" | "S_TEXT/SSA" | "S_TEXT/ASS" | 
+        "S_TEXT/WEBVTT" | "S_TEXT/USF" | "S_KATE"
+    )
+}
+
+fn format_unix_timestamp(timestamp: i64) -> String {
+    // Simple ISO date formatting
+    let secs_per_day = 86400i64;
+    let secs_per_hour = 3600i64;
+    let secs_per_min = 60i64;
+    
+    let days_since_epoch = timestamp / secs_per_day;
+    let remaining_secs = timestamp % secs_per_day;
+    
+    let hours = remaining_secs / secs_per_hour;
+    let mins = (remaining_secs % secs_per_hour) / secs_per_min;
+    let secs = remaining_secs % secs_per_min;
+    
+    // Approximate year/month/day calculation
+    let mut year = 1970;
+    let mut days = days_since_epoch;
+    
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+    
+    let month_days = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    
+    let mut month = 1;
+    for &md in &month_days {
+        if days < md as i64 {
+            break;
+        }
+        days -= md as i64;
+        month += 1;
+    }
+    
+    let day = days + 1;
+    
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, mins, secs)
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+// ============================================================================
+// Public Rust API
+// ============================================================================
+
+
 pub async fn mkv_get_info(path: String) -> Result<MkvInfo, String> {
     let mut parser = MkvParser::new();
     parser.parse(&path)
