@@ -46,6 +46,9 @@ cpal.workspace = true
 rubato.workspace = true
 ringbuf = "0.4"
 
+# Matroska demuxing
+matroska-demuxer = "0.5"
+
 # Video decoding
 openh264 = "0.6"
 
