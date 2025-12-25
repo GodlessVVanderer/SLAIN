@@ -23,18 +23,8 @@ mod element_ids {
     pub const DOC_TYPE_VERSION: u32 = 0x4287;
     pub const DOC_TYPE_READ_VERSION: u32 = 0x4285;
 
-    // Global elements (can appear anywhere)
-    pub const VOID: u32 = 0xEC;
-    pub const CRC32: u32 = 0xBF;
-
     // Segment
     pub const SEGMENT: u32 = 0x18538067;
-
-    // Seek Head (index for random access)
-    pub const SEEK_HEAD: u32 = 0x114D9B74;
-    pub const SEEK: u32 = 0x4DBB;
-    pub const SEEK_ID: u32 = 0x53AB;
-    pub const SEEK_POSITION: u32 = 0x53AC;
 
     // Segment Information
     pub const SEGMENT_INFO: u32 = 0x1549A966;
@@ -368,38 +358,13 @@ impl<R: Read + Seek> EbmlReader<R> {
 
     fn read_element_id(&mut self) -> Result<(u32, usize), String> {
         let mut first_byte = [0u8; 1];
-
-        // Skip any null padding bytes (loop to avoid stack overflow)
-        loop {
-            self.reader.read_exact(&mut first_byte)
-                .map_err(|e| format!("Failed to read element ID: {}", e))?;
-            self.position += 1;
-
-            if first_byte[0] != 0x00 {
-                break;
-            }
-            // Skip null bytes - they're padding
-        }
+        self.reader.read_exact(&mut first_byte)
+            .map_err(|e| format!("Failed to read element ID: {}", e))?;
+        self.position += 1;
 
         let leading_zeros = first_byte[0].leading_zeros();
-        // EBML element IDs: 1-4 bytes with 0-3 leading zeros
         if leading_zeros > 3 {
-            // Could be a corrupted file or unknown element
-            // Try to treat bytes 0x01-0x0F as 4-byte IDs
-            if first_byte[0] >= 0x01 && first_byte[0] <= 0x0F {
-                // Read 3 more bytes for a 4-byte ID
-                let mut id = first_byte[0] as u32;
-                for _ in 0..3 {
-                    let mut byte = [0u8; 1];
-                    self.reader.read_exact(&mut byte)
-                        .map_err(|e| format!("Failed to read element ID: {}", e))?;
-                    self.position += 1;
-                    id = (id << 8) | byte[0] as u32;
-                }
-                return Ok((id, 4));
-            }
-            return Err(format!("Invalid element ID: byte 0x{:02X} at position {}",
-                first_byte[0], self.position - 1));
+            return Err("Invalid element ID".to_string());
         }
 
         let length = (leading_zeros + 1) as usize;
@@ -564,10 +529,6 @@ impl MkvParser {
             let element_end = reader.position() + size;
 
             match id {
-                element_ids::SEEK_HEAD | element_ids::VOID | element_ids::CRC32 => {
-                    // Skip SeekHead (index), Void (padding), and CRC32 elements
-                    reader.skip(size)?;
-                }
                 element_ids::SEGMENT_INFO => {
                     self.parse_segment_info(&mut reader, &mut info, size)?;
                 }
@@ -630,11 +591,11 @@ impl MkvParser {
             }
         }
 
-        // Accept matroska, webm, or empty (assume matroska for compatibility)
-        match doc_type.as_str() {
-            "matroska" | "webm" | "" => Ok(()),
-            _ => Err(format!("Unsupported document type: {}", doc_type)),
+        if doc_type != "matroska" && doc_type != "webm" {
+            return Err(format!("Unsupported document type: {}", doc_type));
         }
+
+        Ok(())
     }
 
     fn parse_segment_info<R: Read + Seek>(
@@ -1412,7 +1373,7 @@ fn is_leap_year(year: i64) -> bool {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 

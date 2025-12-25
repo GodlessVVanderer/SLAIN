@@ -448,8 +448,9 @@ fn get_keydb_paths() -> Vec<PathBuf> {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
+
 
 pub fn get_disc_drives() -> Vec<DriveInfo> {
     detect_disc_drives()
@@ -498,4 +499,73 @@ pub fn disc_menu_action(action: String) -> Result<(), String> {
     
     // Apply to current disc player
     Ok(())
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn detect_disc_type_bluray_and_dvd() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("slain_disc_{}", now));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let bluray_dir = temp_dir.join("bluray");
+        fs::create_dir_all(bluray_dir.join("BDMV")).expect("bluray");
+        assert_eq!(
+            detect_disc_type(bluray_dir.to_str().unwrap()).expect("bluray type"),
+            DiscType::BluRay
+        );
+
+        let dvd_dir = temp_dir.join("dvd");
+        fs::create_dir_all(dvd_dir.join("VIDEO_TS")).expect("dvd");
+        assert_eq!(
+            detect_disc_type(dvd_dir.to_str().unwrap()).expect("dvd type"),
+            DiscType::Dvd
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn detect_disc_type_unknown() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("slain_disc_unknown_{}", now));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        assert_eq!(
+            detect_disc_type(temp_dir.to_str().unwrap()).expect("unknown type"),
+            DiscType::Unknown
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn disc_player_open_errors_on_unknown() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("slain_disc_open_{}", now));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let err = DiscPlayer::open(temp_dir.to_str().unwrap()).expect_err("should fail");
+        assert!(err.contains("Unsupported"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }
