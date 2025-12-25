@@ -262,12 +262,12 @@ impl DeviceDiscovery {
 
     /// Discover Chromecast devices using mDNS
     pub async fn discover_chromecast(&self) -> Result<Vec<CastDevice>, String> {
-        // mDNS query for _googlecast._tcp.local
-        // This would normally use mdns or dns-sd crate
-        // For now, we rely on SSDP/DIAL discovery which catches Chromecasts too
-        
-        // Try to find Chromecasts via DIAL (built into SSDP)
-        Ok(Vec::new())
+        // mDNS query for _googlecast._tcp.local would be ideal, but we reuse SSDP/DIAL.
+        let devices = self.discover_dlna().await?;
+        Ok(devices
+            .into_iter()
+            .filter(|d| matches!(d.device_type, CastDeviceType::Chromecast | CastDeviceType::ChromecastAudio))
+            .collect())
     }
 
     /// Get all discovered devices
@@ -767,7 +767,7 @@ impl LocalStreamServer {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public Rust API
 // ============================================================================
 
 
@@ -842,4 +842,68 @@ pub async fn start_local_server(port: u16) -> Result<String, String> {
         .map_err(|e| format!("Failed to get local IP: {}", e))?;
     
     Ok(format!("http://{}:{}", local_ip, port))
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_config_presets() {
+        let twitch = StreamConfig::twitch_1080p60("abc");
+        assert_eq!(twitch.server_url, "rtmp://live.twitch.tv/app");
+        assert_eq!(twitch.stream_key, "abc");
+        assert_eq!(twitch.resolution, (1920, 1080));
+        assert_eq!(twitch.fps, 60);
+        assert_eq!(twitch.audio_bitrate, 160);
+
+        let youtube = StreamConfig::youtube_1080p60("key");
+        assert_eq!(youtube.server_url, "rtmp://a.rtmp.youtube.com/live2");
+        assert_eq!(youtube.stream_key, "key");
+        assert_eq!(youtube.bitrate_kbps, 9000);
+        assert_eq!(youtube.audio_bitrate, 128);
+    }
+
+    #[test]
+    fn extract_xml_helpers() {
+        let discovery = DeviceDiscovery::new();
+        let xml = r#"
+            <root>
+                <device>
+                    <friendlyName>Living Room TV</friendlyName>
+                    <serviceList>
+                        <service>
+                            <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                            <controlURL>/upnp/control/avtransport</controlURL>
+                        </service>
+                    </serviceList>
+                </device>
+            </root>
+        "#;
+        let name = discovery.extract_xml_element(xml, "friendlyName");
+        assert_eq!(name.as_deref(), Some("Living Room TV"));
+
+        let control = discovery.find_service_control_url(
+            xml,
+            "AVTransport",
+            "http://192.168.1.2:1400",
+        );
+        assert_eq!(
+            control.as_deref(),
+            Some("http://192.168.1.2:1400/upnp/control/avtransport")
+        );
+    }
+
+    #[test]
+    fn extract_xml_value_helper() {
+        let xml = "<CurrentTransportState>PLAYING</CurrentTransportState>";
+        assert_eq!(
+            extract_xml_value(xml, "CurrentTransportState").as_deref(),
+            Some("PLAYING")
+        );
+    }
 }

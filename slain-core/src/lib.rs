@@ -46,6 +46,7 @@ pub mod frame_queue;
 pub mod video_filters;
 pub mod subtitles;
 pub mod imaging;
+pub mod camera;
 
 // ============================================================================
 // Streaming / Network
