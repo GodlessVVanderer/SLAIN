@@ -4,7 +4,7 @@
 // No Python, no external services, runs locally
 // 
 // Wake words: "SLAIN", "Hey SLAIN", "Computer"
-// Commands parsed locally using pattern matching
+// Public Rust API parsed locally using pattern matching
 
 use std::sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}};
 use std::thread;
@@ -477,7 +477,7 @@ static VOICE_ENGINE: Lazy<VoiceEngine> = Lazy::new(|| {
 });
 
 // ============================================================================
-// Tauri Commands
+// Public Rust API
 // ============================================================================
 
 

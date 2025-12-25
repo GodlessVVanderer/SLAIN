@@ -14,6 +14,8 @@
 //! - Direct FFI calls for maximum performance
 
 use libloading::Library;
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -47,6 +49,8 @@ pub enum PipelineKind {
     Vulkan,
     /// CUDA compute via FFI
     Cuda,
+    /// External sidecar process for heavy processing
+    Sidecar,
 }
 
 impl Default for PipelineKind {
@@ -124,6 +128,12 @@ pub struct PipelineConfig {
     pub fps: (u32, u32),
     /// GPU device index (for Vulkan/CUDA)
     pub gpu_index: Option<u32>,
+    /// Optional sidecar command override
+    pub sidecar_command: Option<String>,
+    /// Sidecar command arguments
+    pub sidecar_args: Vec<String>,
+    /// Sidecar environment variables
+    pub sidecar_env: Vec<(String, String)>,
 }
 
 // ============================================================================
@@ -398,12 +408,179 @@ impl Pipeline for CudaPipeline {
 }
 
 // ============================================================================
+// Sidecar Pipeline (External Process)
+// ============================================================================
+
+const DEFAULT_SIDECAR: &str = "slain-sidecar";
+
+pub struct SidecarPipeline {
+    command: Option<String>,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    child: Option<Child>,
+}
+
+impl SidecarPipeline {
+    pub fn new() -> Self {
+        Self {
+            command: None,
+            args: Vec::new(),
+            env: Vec::new(),
+            child: None,
+        }
+    }
+
+    fn resolve_command(&self, config: &PipelineConfig) -> Option<String> {
+        if let Some(command) = config.sidecar_command.clone() {
+            Some(command)
+        } else if is_executable_on_path(DEFAULT_SIDECAR) {
+            Some(DEFAULT_SIDECAR.to_string())
+        } else {
+            None
+        }
+    }
+
+    fn spawn_sidecar(&mut self, command: &str) -> Result<(), PipelineError> {
+        let mut cmd = Command::new(command);
+        cmd.args(&self.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        for (key, value) in &self.env {
+            cmd.env(key, value);
+        }
+
+        let child = cmd.spawn().map_err(|e| {
+            PipelineError::LibraryError(format!("Failed to start sidecar {}: {}", command, e))
+        })?;
+        self.child = Some(child);
+        Ok(())
+    }
+
+    fn shutdown(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+        }
+    }
+}
+
+impl Pipeline for SidecarPipeline {
+    fn kind(&self) -> PipelineKind { PipelineKind::Sidecar }
+
+    fn is_available(&self) -> bool {
+        if let Some(command) = &self.command {
+            return is_executable_on_path(command);
+        }
+        is_executable_on_path(DEFAULT_SIDECAR)
+    }
+
+    fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError> {
+        self.command = self.resolve_command(config);
+        self.args = config.sidecar_args.clone();
+        self.env = config.sidecar_env.clone();
+
+        let Some(command) = self.command.clone() else {
+            return Err(PipelineError::NotAvailable(
+                "Sidecar not found. Provide sidecar_command or install slain-sidecar.".into(),
+            ));
+        };
+
+        if !is_executable_on_path(&command) {
+            return Err(PipelineError::NotAvailable(format!(
+                "Sidecar command not found: {}",
+                command
+            )));
+        }
+
+        self.spawn_sidecar(&command)?;
+        Ok(())
+    }
+
+    fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
+        if let Some(child) = &mut self.child {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(PipelineError::ProcessingFailed(format!(
+                    "Sidecar exited with status {}",
+                    status
+                )));
+            }
+        }
+
+        // TODO: Encode frame to sidecar protocol and decode response.
+        Ok(frame)
+    }
+
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
+
+    fn reset(&mut self) {
+        self.shutdown();
+        self.command = None;
+        self.args.clear();
+        self.env.clear();
+    }
+
+    fn name(&self) -> &str { "Sidecar" }
+}
+
+fn is_executable_on_path(command: &str) -> bool {
+    if command.is_empty() {
+        return false;
+    }
+
+    let path = Path::new(command);
+    if path.components().count() > 1 {
+        return path.exists();
+    }
+
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+
+    let extensions = executable_extensions();
+    for dir in std::env::split_paths(&paths) {
+        if extensions.is_empty() {
+            let candidate = dir.join(command);
+            if candidate.exists() {
+                return true;
+            }
+        } else {
+            for ext in &extensions {
+                let candidate = dir.join(format!("{}{}", command, ext));
+                if candidate.exists() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn executable_extensions() -> Vec<String> {
+    if cfg!(windows) {
+        if let Some(pathext) = std::env::var_os("PATHEXT") {
+            let raw = pathext.to_string_lossy();
+            return raw
+                .split(';')
+                .filter(|ext| !ext.is_empty())
+                .map(|ext| ext.to_string())
+                .collect();
+        }
+        vec![".exe".to_string(), ".cmd".to_string(), ".bat".to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+// ============================================================================
 // Pipeline Manager - Routes frames to active pipeline
 // ============================================================================
 
 /// Manages all pipelines and frame routing
 pub struct PipelineManager {
     active: PipelineKind,
+    sidecar: SidecarPipeline,
     #[cfg(feature = "avisynth")]
     avisynth: AviSynthPipeline,
     #[cfg(feature = "vapoursynth")]
@@ -418,6 +595,7 @@ impl PipelineManager {
     pub fn new() -> Self {
         Self {
             active: PipelineKind::Direct,
+            sidecar: SidecarPipeline::new(),
             #[cfg(feature = "avisynth")]
             avisynth: AviSynthPipeline::new(),
             #[cfg(feature = "vapoursynth")]
@@ -432,7 +610,9 @@ impl PipelineManager {
     /// Get available pipelines on this system
     pub fn available(&self) -> Vec<PipelineKind> {
         let mut list = vec![PipelineKind::Direct];
-        
+
+        if self.sidecar.is_available() { list.push(PipelineKind::Sidecar); }
+
         #[cfg(feature = "avisynth")]
         if self.avisynth.is_available() { list.push(PipelineKind::AviSynth); }
         
@@ -462,6 +642,7 @@ impl PipelineManager {
     pub fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError> {
         match self.active {
             PipelineKind::Direct => Ok(()),
+            PipelineKind::Sidecar => self.sidecar.init(config),
             #[cfg(feature = "avisynth")]
             PipelineKind::AviSynth => self.avisynth.init(config),
             #[cfg(feature = "vapoursynth")]
@@ -479,6 +660,7 @@ impl PipelineManager {
     pub fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         match self.active {
             PipelineKind::Direct => Ok(frame),
+            PipelineKind::Sidecar => self.sidecar.process(frame),
             #[cfg(feature = "avisynth")]
             PipelineKind::AviSynth => self.avisynth.process(frame),
             #[cfg(feature = "vapoursynth")]
