@@ -179,8 +179,9 @@ impl Decoder for OpenH264Decoder {
     fn codec(&self) -> Codec { Codec::H264 }
     
     fn decode(&mut self, _data: &[u8], _pts_us: i64) -> Result<Vec<DecodedFrame>, DecodeError> {
-        // TODO: Real decode
-        Ok(vec![])
+        Err(DecodeError::DecodeFailed(
+            "OpenH264 decoder not implemented in this build".to_string(),
+        ))
     }
     
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, DecodeError> {
@@ -214,8 +215,9 @@ impl Decoder for Dav1dDecoder {
     fn codec(&self) -> Codec { Codec::Av1 }
     
     fn decode(&mut self, _data: &[u8], _pts_us: i64) -> Result<Vec<DecodedFrame>, DecodeError> {
-        // TODO: Real decode
-        Ok(vec![])
+        Err(DecodeError::DecodeFailed(
+            "dav1d decoder not implemented in this build".to_string(),
+        ))
     }
     
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, DecodeError> {
