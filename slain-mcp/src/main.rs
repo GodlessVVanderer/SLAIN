@@ -430,13 +430,13 @@ impl McpServer {
             },
             Tool {
                 name: "player_pipeline".into(),
-                description: "Set video processing pipeline (direct, avisynth, vapoursynth, vulkan, cuda)".into(),
+                description: "Set video processing pipeline (direct, avisynth, vapoursynth, vulkan, cuda, sidecar)".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "pipeline": {
                             "type": "string",
-                            "enum": ["direct", "avisynth", "vapoursynth", "vulkan", "cuda"],
+                            "enum": ["direct", "avisynth", "vapoursynth", "vulkan", "cuda", "sidecar"],
                             "description": "Processing pipeline to use"
                         },
                         "script": { "type": "string", "description": "Filter script (optional)" }
@@ -768,6 +768,7 @@ impl McpServer {
             "vapoursynth" => "VapourSynth Python filters (DLL FFI)".into(),
             "vulkan" => "Vulkan compute shaders (wgpu)".into(),
             "cuda" => "CUDA kernels (DLL FFI)".into(),
+            "sidecar" => "External sidecar process (IPC)".into(),
             _ => return Err(format!("Unknown pipeline: {}", pipeline)),
         };
         
