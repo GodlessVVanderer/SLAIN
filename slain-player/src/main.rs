@@ -19,7 +19,9 @@ use slain_core::audio::AudioPlayer;
 use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDecoder, HwDecoderType, DecodedFrame, DecoderConfig};
 use slain_core::pixel_convert::{PixelConverter, VideoFrame as PxVideoFrame, PixelFormat as PxFormat, ColorSpace};
 use slain_core::bandwidth::{window_monitor, AttentionState};
-use slain_core::pipeline::{PipelineKind, PipelineManager};
+use slain_core::camera::fetch_camera_frame;
+use slain_core::pipeline::{PipelineConfig, PipelineKind, PipelineManager};
+use slain_core::tray::{get_cameras, SecurityCamera};
 
 // ============================================================================
 // Playback State Machine
@@ -52,6 +54,28 @@ struct PlaybackShared {
     seek_requested: AtomicBool,
     seek_target_ms: AtomicU64,
     frame_queue: Mutex<VecDeque<RgbFrame>>,
+}
+
+struct CameraPreviewShared {
+    frame: Mutex<Option<RgbFrame>>,
+    error: Mutex<Option<String>>,
+    running: AtomicBool,
+}
+
+impl CameraPreviewShared {
+    fn new() -> Self {
+        Self {
+            frame: Mutex::new(None),
+            error: Mutex::new(None),
+            running: AtomicBool::new(true),
+        }
+    }
+}
+
+struct CameraPreview {
+    camera_id: String,
+    shared: Arc<CameraPreviewShared>,
+    handle: Option<thread::JoinHandle<()>>,
 }
 
 impl PlaybackShared {
@@ -132,9 +156,16 @@ struct SlainApp {
     // Pipeline selection
     pipeline: PipelineKind,
     pipeline_manager: Option<PipelineManager>,
+    pipeline_script: String,
+    sidecar_command: String,
+    sidecar_args: String,
+    sidecar_env: String,
+    camera_preview: Option<CameraPreview>,
+    camera_error: Option<String>,
     
     // Display
     video_texture: Option<TextureHandle>,
+    camera_texture: Option<TextureHandle>,
     frame_width: u32,
     frame_height: u32,
     last_frame_time: Instant,
@@ -165,7 +196,14 @@ impl SlainApp {
             audio_player: None, // Lazy init on file load
             pipeline: PipelineKind::SoftwareOnly,
             pipeline_manager: None, // Lazy init on file load
+            pipeline_script: String::new(),
+            sidecar_command: String::new(),
+            sidecar_args: String::new(),
+            sidecar_env: String::new(),
             video_texture: None,
+            camera_preview: None,
+            camera_error: None,
+            camera_texture: None,
             frame_width: 1920,
             frame_height: 1080,
             last_frame_time: Instant::now(),
@@ -293,6 +331,78 @@ impl SlainApp {
         self.shared.should_stop.store(false, Ordering::SeqCst);
         self.shared.frame_queue.lock().clear();
     }
+
+    fn build_pipeline_config(&self) -> PipelineConfig {
+        PipelineConfig {
+            script: self.pipeline_script.clone(),
+            width: self.frame_width,
+            height: self.frame_height,
+            fps: (0, 1),
+            gpu_index: None,
+            sidecar_command: if self.sidecar_command.trim().is_empty() {
+                None
+            } else {
+                Some(self.sidecar_command.trim().to_string())
+            },
+            sidecar_args: parse_sidecar_args(&self.sidecar_args),
+            sidecar_env: parse_sidecar_env(&self.sidecar_env),
+        }
+    }
+
+    fn apply_pipeline(&mut self) {
+        if self.pipeline_manager.is_none() {
+            self.pipeline_manager = Some(PipelineManager::new());
+        }
+        if let Some(ref mut manager) = self.pipeline_manager {
+            manager.set_active(self.pipeline);
+            if let Err(err) = manager.init(&self.build_pipeline_config()) {
+                tracing::warn!("Pipeline init failed: {}", err);
+        }
+    }
+
+    fn start_camera_preview(&mut self, camera: SecurityCamera) {
+        self.stop_camera_preview();
+        self.camera_error = None;
+        let shared = Arc::new(CameraPreviewShared::new());
+        let shared_clone = Arc::clone(&shared);
+        let url = camera.url.clone();
+        let handle = thread::spawn(move || {
+            while shared_clone.running.load(Ordering::SeqCst) {
+                match fetch_camera_frame(&url) {
+                    Ok(frame) => {
+                        *shared_clone.frame.lock() = Some(RgbFrame {
+                            data: frame.data,
+                            width: frame.width,
+                            height: frame.height,
+                            pts_ms: 0,
+                        });
+                        *shared_clone.error.lock() = None;
+                    }
+                    Err(err) => {
+                        *shared_clone.error.lock() = Some(err);
+                    }
+                }
+                thread::sleep(Duration::from_millis(500));
+            }
+        });
+        self.camera_preview = Some(CameraPreview {
+            camera_id: camera.id,
+            shared,
+            handle: Some(handle),
+        });
+    }
+
+    fn stop_camera_preview(&mut self) {
+        if let Some(mut preview) = self.camera_preview.take() {
+            preview.shared.running.store(false, Ordering::SeqCst);
+            if let Some(handle) = preview.handle.take() {
+                let _ = handle.join();
+            }
+        }
+        self.camera_texture = None;
+        self.camera_error = None;
+    }
+}
     
     fn open_mp4(&mut self, path: &PathBuf) {
         self.playback_state = PlaybackState::Loading;
@@ -400,6 +510,29 @@ impl SlainApp {
     }
 }
 
+fn parse_sidecar_args(raw: &str) -> Vec<String> {
+    raw.split_whitespace().map(|s| s.to_string()).collect()
+}
+
+fn parse_sidecar_env(raw: &str) -> Vec<(String, String)> {
+    raw.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let mut parts = trimmed.splitn(2, '=');
+            let key = parts.next()?.trim();
+            let value = parts.next().unwrap_or("").trim();
+            if key.is_empty() {
+                None
+            } else {
+                Some((key.to_string(), value.to_string()))
+            }
+        })
+        .collect()
+}
+
 // ============================================================================
 // UI Rendering
 // ============================================================================
@@ -439,6 +572,22 @@ impl eframe::App for SlainApp {
             
             self.frame_width = frame.width;
             self.frame_height = frame.height;
+        }
+
+        // Update camera preview texture if available
+        if let Some(preview) = &self.camera_preview {
+            if let Some(frame) = preview.shared.frame.lock().take() {
+                let image = ColorImage::from_rgb(
+                    [frame.width as usize, frame.height as usize],
+                    &frame.data,
+                );
+                self.camera_texture = Some(ctx.load_texture(
+                    "camera_preview",
+                    image,
+                    TextureOptions::LINEAR,
+                ));
+            }
+            self.camera_error = preview.shared.error.lock().clone();
         }
         
         // Menu bar
@@ -480,8 +629,56 @@ impl eframe::App for SlainApp {
                             if ui.radio(selected, format!("{:?}", p)).clicked() {
                                 self.pipeline = p;
                                 manager.set_active(p);
+                                self.apply_pipeline();
                                 ui.close_menu();
                             }
+                        }
+                    }
+                    ui.separator();
+                    ui.label("Pipeline Script:");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.pipeline_script)
+                            .desired_rows(3)
+                            .hint_text("Optional filter script"),
+                    );
+                    if self.pipeline == PipelineKind::Sidecar {
+                        ui.separator();
+                        ui.label("Sidecar Command:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.sidecar_command)
+                                .hint_text("slain-sidecar"),
+                        );
+                        ui.label("Sidecar Args:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.sidecar_args)
+                                .hint_text("--flag value"),
+                        );
+                        ui.label("Sidecar Env (KEY=VALUE per line):");
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.sidecar_env)
+                                .desired_rows(2),
+                        );
+                    }
+                    if ui.button("Apply Pipeline").clicked() {
+                        self.apply_pipeline();
+                    }
+                });
+
+                ui.menu_button("Cameras", |ui| {
+                    let cameras = get_cameras();
+                    if cameras.is_empty() {
+                        ui.label("No cameras configured.");
+                    } else {
+                        for cam in cameras {
+                            ui.horizontal(|ui| {
+                                ui.label(&cam.name);
+                                if ui.button("Preview").clicked() {
+                                    self.start_camera_preview(cam.clone());
+                                }
+                                if ui.button("Stop").clicked() {
+                                    self.stop_camera_preview();
+                                }
+                            });
                         }
                     }
                 });
@@ -563,6 +760,19 @@ impl eframe::App for SlainApp {
                             });
                         }
                     }
+                }
+
+                if let Some(texture) = &self.camera_texture {
+                    ui.separator();
+                    ui.label("Camera Preview");
+                    let available = ui.available_size();
+                    let aspect = texture.size()[0] as f32 / texture.size()[1] as f32;
+                    let max_width = available.x.min(320.0);
+                    let max_height = max_width / aspect;
+                    ui.image(texture.id(), egui::vec2(max_width, max_height));
+                } else if let Some(err) = &self.camera_error {
+                    ui.separator();
+                    ui.label(format!("Camera preview error: {}", err));
                 }
                 
                 // OSD overlay

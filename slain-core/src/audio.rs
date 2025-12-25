@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use ringbuf::traits::Observer;
 use symphonia::core::audio::{AudioBufferRef, Signal, SampleBuffer};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
@@ -23,7 +22,6 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
 use ringbuf::HeapRb;
-use ringbuf::traits::{Consumer, Producer, Split};
 use serde::{Deserialize, Serialize};
 
 
@@ -59,21 +57,17 @@ pub enum PlaybackState {
     Paused,
 }
 
-// AudioPlayer state that is Send + Sync
-pub struct AudioPlayerState {
+// Full player with stream (not Send due to cpal::Stream)
+pub struct AudioPlayer {
     // Playback state
     state: Arc<Mutex<PlaybackState>>,
     playing: Arc<AtomicBool>,
+    stop_signal: Arc<AtomicBool>,
     position_samples: Arc<AtomicU64>,
     sample_rate: Arc<AtomicU64>,
 
     // Volume (0.0 - 1.0)
     volume: Arc<Mutex<f32>>,
-}
-
-// Full player with stream (not Send due to cpal::Stream)
-pub struct AudioPlayer {
-    inner: AudioPlayerState,
 
     // Audio stream (not Send/Sync - kept out of global static)
     stream: Option<Stream>,
@@ -227,6 +221,7 @@ impl AudioPlayer {
         Self {
             state: Arc::new(Mutex::new(PlaybackState::Stopped)),
             playing: Arc::new(AtomicBool::new(false)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
             position_samples: Arc::new(AtomicU64::new(0)),
             sample_rate: Arc::new(AtomicU64::new(44100)),
             stream: None,
@@ -264,13 +259,21 @@ impl AudioPlayer {
         
         // Start decode thread
         let playing = self.playing.clone();
+        let stop_signal = self.stop_signal.clone();
         let position = self.position_samples.clone();
         let mut producer = self.producer.take().unwrap();
         
         playing.store(true, Ordering::SeqCst);
+        stop_signal.store(false, Ordering::SeqCst);
         
         let decode_handle = thread::spawn(move || {
-            if let Err(e) = decode_audio_to_buffer(path, &mut producer, &playing, &position) {
+            if let Err(e) = decode_audio_to_buffer(
+                path,
+                &mut producer,
+                &playing,
+                &stop_signal,
+                &position,
+            ) {
                 eprintln!("Decode error: {}", e);
             }
         });
@@ -353,6 +356,7 @@ impl AudioPlayer {
     
     pub fn stop(&mut self) {
         self.playing.store(false, Ordering::SeqCst);
+        self.stop_signal.store(true, Ordering::SeqCst);
         
         // Stop stream
         if let Some(stream) = self.stream.take() {
@@ -410,6 +414,7 @@ fn decode_audio_to_buffer(
     path: std::path::PathBuf,
     producer: &mut ringbuf::HeapProd<f32>,
     playing: &AtomicBool,
+    stop_signal: &AtomicBool,
     position: &AtomicU64,
 ) -> Result<(), String> {
     let file = File::open(&path)
@@ -455,6 +460,10 @@ fn decode_audio_to_buffer(
     
     loop {
         // Check if we should stop
+        if stop_signal.load(Ordering::SeqCst) {
+            break;
+        }
+
         if !playing.load(Ordering::SeqCst) {
             // Wait a bit when paused instead of busy-looping
             thread::sleep(Duration::from_millis(50));
@@ -507,8 +516,12 @@ fn decode_audio_to_buffer(
             for &sample in samples {
                 // Busy wait if buffer is full
                 while producer.is_full() {
-                    if !playing.load(Ordering::SeqCst) {
+                    if stop_signal.load(Ordering::SeqCst) {
                         return Ok(());
+                    }
+                    if !playing.load(Ordering::SeqCst) {
+                        thread::sleep(Duration::from_millis(50));
+                        continue;
                     }
                     thread::sleep(Duration::from_micros(100));
                 }
@@ -575,7 +588,7 @@ thread_local! {
 }
 
 // ============================================================================
-// Tauri Commands
+// Public Rust API
 // ============================================================================
 
 
@@ -590,54 +603,54 @@ pub async fn audio_list_devices() -> Result<Vec<AudioDevice>, String> {
 
 
 pub async fn audio_play(path: String) -> Result<(), String> {
-    let mut player = AUDIO_PLAYER.lock().unwrap();
-    player.play_file(&path)
+    AUDIO_PLAYER.with(|player| player.borrow_mut().play_file(&path))
 }
 
 
 pub async fn audio_pause() -> Result<(), String> {
-    let mut player = AUDIO_PLAYER.lock().unwrap();
-    player.pause();
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().pause();
+    });
     Ok(())
 }
 
 
 pub async fn audio_resume() -> Result<(), String> {
-    let mut player = AUDIO_PLAYER.lock().unwrap();
-    player.resume();
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().resume();
+    });
     Ok(())
 }
 
 
 pub async fn audio_stop() -> Result<(), String> {
-    let mut player = AUDIO_PLAYER.lock().unwrap();
-    player.stop();
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().stop();
+    });
     Ok(())
 }
 
 
 pub async fn audio_set_volume(volume: f32) -> Result<(), String> {
-    let mut player = AUDIO_PLAYER.lock().unwrap();
-    player.set_volume(volume);
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().set_volume(volume);
+    });
     Ok(())
 }
 
 
 pub async fn audio_get_volume() -> Result<f32, String> {
-    let player = AUDIO_PLAYER.lock().unwrap();
-    Ok(player.get_volume())
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().get_volume()))
 }
 
 
 pub async fn audio_get_position() -> Result<f64, String> {
-    let player = AUDIO_PLAYER.lock().unwrap();
-    Ok(player.get_position_secs())
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().get_position_secs()))
 }
 
 
 pub async fn audio_is_playing() -> Result<bool, String> {
-    let player = AUDIO_PLAYER.lock().unwrap();
-    Ok(player.is_playing())
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().is_playing()))
 }
 
 // ============================================================================
