@@ -8,7 +8,9 @@
 //! - Recording support
 
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 use std::collections::HashMap;
+use chrono::TimeZone;
 
 // ============================================================================
 // Channel Types
@@ -189,14 +191,76 @@ pub struct EpgData {
 
 /// Parse XMLTV format EPG
 pub fn parse_xmltv(content: &str) -> Result<EpgData, String> {
-    // In full implementation, use quick-xml or roxmltree to parse
-    // XMLTV format: <tv><channel id="..."><display-name>...</display-name></channel>
-    //               <programme start="..." stop="..." channel="..."><title>...</title></programme></tv>
-    
+    let mut channels: HashMap<String, Vec<EpgProgram>> = HashMap::new();
+    let program_re = Regex::new(
+        r#"<programme[^>]*channel="(?P<channel>[^"]+)"[^>]*start="(?P<start>[^"]+)"[^>]*stop="(?P<stop>[^"]+)"[^>]*>(?s:.*?)</programme>"#,
+    )
+    .map_err(|e| format!("XMLTV regex error: {}", e))?;
+    let title_re = Regex::new(r#"<title[^>]*>(?P<title>[^<]+)</title>"#)
+        .map_err(|e| format!("XMLTV regex error: {}", e))?;
+    let desc_re = Regex::new(r#"<desc[^>]*>(?P<desc>[^<]+)</desc>"#)
+        .map_err(|e| format!("XMLTV regex error: {}", e))?;
+    let category_re = Regex::new(r#"<category[^>]*>(?P<cat>[^<]+)</category>"#)
+        .map_err(|e| format!("XMLTV regex error: {}", e))?;
+    let icon_re = Regex::new(r#"<icon[^>]*src="(?P<src>[^"]+)""#)
+        .map_err(|e| format!("XMLTV regex error: {}", e))?;
+
+    for caps in program_re.captures_iter(content) {
+        let channel_id = caps.name("channel").map(|m| m.as_str()).unwrap_or("").to_string();
+        let start_time = parse_xmltv_time(caps.name("start").map(|m| m.as_str()).unwrap_or(""))?;
+        let end_time = parse_xmltv_time(caps.name("stop").map(|m| m.as_str()).unwrap_or(""))?;
+        let block = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+        let title = title_re
+            .captures(block)
+            .and_then(|c| c.name("title").map(|m| m.as_str().to_string()))
+            .unwrap_or_else(|| "Unknown".to_string());
+        let description = desc_re
+            .captures(block)
+            .and_then(|c| c.name("desc").map(|m| m.as_str().to_string()));
+        let category = category_re
+            .captures(block)
+            .and_then(|c| c.name("cat").map(|m| m.as_str().to_string()));
+        let icon = icon_re
+            .captures(block)
+            .and_then(|c| c.name("src").map(|m| m.as_str().to_string()));
+
+        channels
+            .entry(channel_id.clone())
+            .or_default()
+            .push(EpgProgram {
+                channel_id,
+                title,
+                description,
+                start_time,
+                end_time,
+                category,
+                icon,
+            });
+    }
+
     Ok(EpgData {
-        channels: HashMap::new(),
+        channels,
         last_updated: chrono::Utc::now().timestamp(),
     })
+}
+
+fn parse_xmltv_time(raw: &str) -> Result<i64, String> {
+    // Format: YYYYMMDDHHMMSS + optional timezone, we parse first 14 digits.
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < 14 {
+        return Err("Invalid XMLTV time format".to_string());
+    }
+    let year: i32 = digits[0..4].parse().map_err(|_| "Invalid year")?;
+    let month: u32 = digits[4..6].parse().map_err(|_| "Invalid month")?;
+    let day: u32 = digits[6..8].parse().map_err(|_| "Invalid day")?;
+    let hour: u32 = digits[8..10].parse().map_err(|_| "Invalid hour")?;
+    let minute: u32 = digits[10..12].parse().map_err(|_| "Invalid minute")?;
+    let second: u32 = digits[12..14].parse().map_err(|_| "Invalid second")?;
+    let dt = chrono::NaiveDate::from_ymd_opt(year, month, day)
+        .ok_or("Invalid date")?
+        .and_hms_opt(hour, minute, second)
+        .ok_or("Invalid time")?;
+    Ok(chrono::Utc.from_utc_datetime(&dt).timestamp())
 }
 
 /// Get current program for a channel
@@ -341,7 +405,7 @@ impl IptvManager {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 use std::sync::Mutex;
@@ -422,4 +486,95 @@ pub fn toggle_iptv_favorite(channel_id: String) -> Result<(), String> {
 
 pub fn parse_m3u_content(content: String) -> Result<IptvPlaylist, String> {
     parse_m3u(&content)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn parse_m3u_basic() {
+        let content = "#EXTM3U\n#EXTINF:-1 tvg-id=\"chan1\" tvg-logo=\"http://logo\" group-title=\"News\",Channel One\nhttp://example.com/stream1\n";
+        let playlist = parse_m3u(content).expect("parse m3u");
+        assert_eq!(playlist.channels.len(), 1);
+        let channel = &playlist.channels[0];
+        assert_eq!(channel.name, "Channel One");
+        assert_eq!(channel.stream_url, "http://example.com/stream1");
+        assert_eq!(channel.logo_url.as_deref(), Some("http://logo"));
+        assert_eq!(channel.group.as_deref(), Some("News"));
+        assert_eq!(channel.epg_id.as_deref(), Some("chan1"));
+        assert!(playlist.groups.contains(&"News".to_string()));
+    }
+
+    #[test]
+    fn parse_m3u_requires_header() {
+        let content = "#EXTINF:-1,Missing Header\nhttp://example.com/stream\n";
+        let err = parse_m3u(content).expect_err("missing header should error");
+        assert!(err.contains("#EXTM3U"));
+    }
+
+    #[test]
+    fn manager_grouping_and_favorites() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("slain_iptv_{}", now));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let playlist_path = temp_dir.join("playlist.m3u");
+        let content = "\
+#EXTM3U\n\
+#EXTINF:-1 group-title=\"Sports\",Sports One\n\
+http://example.com/sports1\n\
+#EXTINF:-1 group-title=\"News\",News One\n\
+http://example.com/news1\n";
+        fs::write(&playlist_path, content).expect("write playlist");
+
+        let mut manager = IptvManager::new();
+        manager
+            .load_playlist_file(playlist_path.to_str().unwrap())
+            .expect("load playlist");
+
+        let groups = manager.get_all_groups();
+        assert_eq!(groups, vec!["News".to_string(), "Sports".to_string()]);
+
+        let channels = manager.get_all_channels();
+        assert_eq!(channels.len(), 2);
+        let first_id = channels[0].id.clone();
+        manager.toggle_favorite(&first_id);
+        let favorites = manager.get_favorites();
+        assert_eq!(favorites.len(), 1);
+        assert_eq!(favorites[0].id, first_id);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn parse_xmltv_basic() {
+        let xml = r#"
+            <tv>
+              <programme start="20240101000000 +0000" stop="20240101003000 +0000" channel="ch1">
+                <title>Morning News</title>
+                <desc>Top stories.</desc>
+                <category>News</category>
+                <icon src="http://example.com/icon.png" />
+              </programme>
+            </tv>
+        "#;
+        let epg = parse_xmltv(xml).expect("parse xmltv");
+        let programs = epg.channels.get("ch1").expect("channel");
+        assert_eq!(programs.len(), 1);
+        let program = &programs[0];
+        assert_eq!(program.title, "Morning News");
+        assert_eq!(program.description.as_deref(), Some("Top stories."));
+        assert_eq!(program.category.as_deref(), Some("News"));
+        assert_eq!(program.icon.as_deref(), Some("http://example.com/icon.png"));
+        assert!(program.start_time < program.end_time);
+    }
 }

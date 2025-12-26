@@ -597,7 +597,7 @@ pub fn scale_subtitles(cues: &mut [SubtitleCue], factor: f64) {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 
@@ -652,4 +652,72 @@ pub async fn download_opensubtitle(
         .map_err(|e| format!("Failed to save subtitle: {}", e))?;
     
     Ok(save_path)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn parse_srt_basic() {
+        let content = "1\n00:00:01,000 --> 00:00:02,500\nHello world\n\n";
+        let cues = parse_srt(content).expect("parse srt");
+        assert_eq!(cues.len(), 1);
+        assert!((cues[0].start_time - 1.0).abs() < 0.001);
+        assert!((cues[0].end_time - 2.5).abs() < 0.001);
+        assert_eq!(cues[0].text, "Hello world");
+    }
+
+    #[test]
+    fn parse_ass_dialogue_strips_formatting() {
+        let content = "[Events]\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\i1}Hi\\Nthere";
+        let cues = parse_ass(content).expect("parse ass");
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].text, "Hi\nthere");
+    }
+
+    #[test]
+    fn parse_vtt_basic() {
+        let content = "WEBVTT\n\n00:00.000 --> 00:02.000\nLine one\n";
+        let cues = parse_vtt(content).expect("parse vtt");
+        assert_eq!(cues.len(), 1);
+        assert!((cues[0].start_time - 0.0).abs() < 0.001);
+        assert!((cues[0].end_time - 2.0).abs() < 0.001);
+        assert_eq!(cues[0].text, "Line one");
+    }
+
+    #[test]
+    fn find_external_subtitles_detects_languages() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("slain_subs_{}", now));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let video_path = temp_dir.join("movie.mkv");
+        fs::write(&video_path, "stub").expect("video file");
+
+        let en_path = temp_dir.join("movie.en.srt");
+        let es_path = temp_dir.join("movie.es.ass");
+        fs::write(&en_path, "1\n00:00:01,000 --> 00:00:02,000\nHi\n")
+            .expect("en subtitle");
+        fs::write(&es_path, "[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hola")
+            .expect("es subtitle");
+
+        let mut found = find_external_subtitles(video_path.to_str().unwrap());
+        found.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].language, "English");
+        assert_eq!(found[1].language, "Spanish");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }

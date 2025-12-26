@@ -10,15 +10,15 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 // ============================================================================
-// Stub types for system tray (replaces Tauri dependency)
-// These allow the module to compile without Tauri
+// Stub types for system tray (replaces external UI dependency)
+// These allow the module to compile without a platform UI layer
 // ============================================================================
 
-/// Stub for Tauri AppHandle
+/// Stub for AppHandle
 pub struct AppHandle;
 
 impl AppHandle {
-    /// Stub - returns None since we're not using Tauri
+    /// Stub - returns None since we're not using a platform UI layer
     pub fn get_webview_window(&self, _label: &str) -> Option<WebviewWindow> {
         None
     }
@@ -393,7 +393,7 @@ fn update_tray_menu(app: &AppHandle) {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 

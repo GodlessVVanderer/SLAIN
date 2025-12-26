@@ -46,8 +46,12 @@ cpal.workspace = true
 rubato.workspace = true
 ringbuf = "0.4"
 
+# Matroska demuxing
+matroska-demuxer = "0.5"
+
 # Video decoding
 openh264 = "0.6"
+matroska-demuxer = "0.7"
 
 # Regex for parsing
 regex = "1.10"
@@ -91,5 +95,23 @@ rayon = { version = "1.10", optional = true }
 # POSIX libc bindings for low-level system calls
 libc = "0.2"
 
+# SQLite for message board
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Temp files for tests
+tempfile = "3.10"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+bitflags = "2.4"
+
+# Windows COM/DirectShow APIs
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_Media_DirectShow",
+    "Win32_Media_MediaFoundation",
+]

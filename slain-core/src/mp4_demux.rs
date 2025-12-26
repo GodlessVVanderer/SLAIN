@@ -172,8 +172,7 @@ pub enum ChannelLayout {
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub stream_index: u32,
-    pub pts: i64,           // Presentation timestamp (in track timescale)
-    pub pts_ms: i64,        // Presentation timestamp in milliseconds
+    pub pts: i64,           // Presentation timestamp
     pub dts: i64,           // Decode timestamp
     pub duration: i64,
     pub keyframe: bool,
@@ -828,20 +827,12 @@ pub mod mp4 {
             let pts = best_time;
             let dts = best_time;  // Simplified - should use ctts
 
-            // Convert PTS to milliseconds using track timescale
-            let pts_ms = if track.timescale > 0 {
-                (pts * 1000) / (track.timescale as i64)
-            } else {
-                pts
-            };
-
             // Advance to next sample
             self.tracks[track_idx].current_sample += 1;
 
             Some(Packet {
                 stream_index: track_idx as u32,
                 pts,
-                pts_ms,
                 dts,
                 duration: 0,
                 keyframe,
@@ -877,9 +868,7 @@ pub mod mp4 {
             }
 
             // Find which chunk this sample is in
-            let mut chunk = 0usize;
             let mut sample = 0usize;
-            let _samples_per_chunk = stsc[0].1 as usize;
 
             for i in 0..stsc.len() {
                 let first_chunk = (stsc[i].0 - 1) as usize;
@@ -893,29 +882,21 @@ pub mod mp4 {
 
                 for c in first_chunk..next_first_chunk {
                     if sample + spc > sample_idx {
-                        chunk = c;
-                        let _ = spc; // samples_per_chunk found
-                        break;
+                        // Calculate offset within chunk
+                        let chunk_offset = *stco.get(c)?;
+                        let sample_in_chunk = sample_idx - sample;
+                        
+                        let mut offset = chunk_offset;
+                        for j in 0..sample_in_chunk {
+                            offset += *stsz.get(sample + j)? as u64;
+                        }
+                        return Some(offset);
                     }
                     sample += spc;
-                    chunk = c + 1;
-                }
-
-                if sample + spc > sample_idx {
-                    break;
                 }
             }
 
-            // Calculate offset within chunk
-            let chunk_offset = *stco.get(chunk)?;
-            let sample_in_chunk = sample_idx - sample;
-            
-            let mut offset = chunk_offset;
-            for i in 0..sample_in_chunk {
-                offset += *stsz.get(sample + i)? as u64;
-            }
-
-            Some(offset)
+            None
         }
 
         /// Seek to specific timestamp (microseconds)
@@ -971,7 +952,7 @@ pub mod mp4 {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 
