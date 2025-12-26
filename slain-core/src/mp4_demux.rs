@@ -172,8 +172,7 @@ pub enum ChannelLayout {
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub stream_index: u32,
-    pub pts: i64,           // Presentation timestamp (in track timescale)
-    pub pts_ms: i64,        // Presentation timestamp in milliseconds
+    pub pts: i64,           // Presentation timestamp
     pub dts: i64,           // Decode timestamp
     pub duration: i64,
     pub keyframe: bool,
@@ -257,7 +256,7 @@ pub mod mp4 {
     }
 
     impl<R: Read + Seek> Mp4Demuxer<R> {
-        pub fn new(reader: R) -> Result<Self, String> {
+        pub fn new(mut reader: R) -> Result<Self, String> {
             let mut demuxer = Self {
                 reader,
                 duration: 0,
@@ -828,20 +827,12 @@ pub mod mp4 {
             let pts = best_time;
             let dts = best_time;  // Simplified - should use ctts
 
-            // Convert PTS to milliseconds using track timescale
-            let pts_ms = if track.timescale > 0 {
-                (pts * 1000) / (track.timescale as i64)
-            } else {
-                pts
-            };
-
             // Advance to next sample
             self.tracks[track_idx].current_sample += 1;
 
             Some(Packet {
                 stream_index: track_idx as u32,
                 pts,
-                pts_ms,
                 dts,
                 duration: 0,
                 keyframe,
@@ -879,7 +870,7 @@ pub mod mp4 {
             // Find which chunk this sample is in
             let mut chunk = 0usize;
             let mut sample = 0usize;
-            let _samples_per_chunk = stsc[0].1 as usize;
+            let mut samples_per_chunk = stsc[0].1 as usize;
 
             for i in 0..stsc.len() {
                 let first_chunk = (stsc[i].0 - 1) as usize;
@@ -894,7 +885,7 @@ pub mod mp4 {
                 for c in first_chunk..next_first_chunk {
                     if sample + spc > sample_idx {
                         chunk = c;
-                        let _ = spc; // samples_per_chunk found
+                        samples_per_chunk = spc;
                         break;
                     }
                     sample += spc;
@@ -971,7 +962,7 @@ pub mod mp4 {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 

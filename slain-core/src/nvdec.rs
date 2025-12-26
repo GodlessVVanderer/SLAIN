@@ -128,7 +128,6 @@ pub struct CuvidVideoSignalDescription {
 
 // CUVIDPICPARAMS - Picture parameters for decoding
 #[repr(C)]
-#[allow(non_snake_case)]
 pub struct CuvidPicParams {
     pub pic_width_in_mbs: i32,
     pub pic_height_in_mbs: i32,
@@ -159,7 +158,6 @@ pub struct CuvidDispInfo {
 
 // CUVIDDECODECREATEINFO - Decoder creation parameters
 #[repr(C)]
-#[allow(non_snake_case)]
 pub struct CuvidDecodeCreateInfo {
     pub ulWidth: u32,
     pub ulHeight: u32,
@@ -185,7 +183,6 @@ pub struct CuvidDecodeCreateInfo {
 
 // CUVIDPARSERPARAMS - Parser creation parameters
 #[repr(C)]
-#[allow(non_snake_case)]
 pub struct CuvidParserParams {
     pub CodecType: CudaVideoCodec,
     pub ulMaxNumDecodeSurfaces: u32,
@@ -214,7 +211,6 @@ const CUVID_PKT_TIMESTAMP: u32 = 0x02;
 
 // CUVIDPROCPARAMS - Frame mapping parameters
 #[repr(C)]
-#[allow(non_snake_case)]
 pub struct CuvidProcParams {
     pub progressive_frame: i32,
     pub second_field: i32,
@@ -934,7 +930,7 @@ impl Drop for NvdecDecoder {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 

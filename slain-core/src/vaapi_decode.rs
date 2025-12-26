@@ -648,25 +648,27 @@ impl VaapiDecoder {
     
     /// Decode a packet (this is a simplified interface - real implementation needs codec-specific parsing)
     #[cfg(target_os = "linux")]
-    pub fn decode(&mut self, _data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
+    pub fn decode(&mut self, data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
         // Get next surface
         let surface = self.surfaces[self.current_surface];
         self.current_surface = (self.current_surface + 1) % NUM_SURFACES;
-
-        // This is a simplified version - real implementation needs:
-        // 1. Parse NAL units
-        // 2. Build codec-specific picture parameter buffers
-        // 3. Build slice parameter buffers
-        // 4. Submit slice data
-
-        // For now, we just demonstrate the surface mapping
-        // The actual decode would require full codec-specific parameter building
-
-        // Queue surface for later retrieval
-        self.pending_frames.push_back((surface, pts));
-
-        // Try to get a completed frame
-        self.get_completed_frame()
+        
+        unsafe {
+            // This is a simplified version - real implementation needs:
+            // 1. Parse NAL units
+            // 2. Build codec-specific picture parameter buffers
+            // 3. Build slice parameter buffers
+            // 4. Submit slice data
+            
+            // For now, we just demonstrate the surface mapping
+            // The actual decode would require full codec-specific parameter building
+            
+            // Queue surface for later retrieval
+            self.pending_frames.push_back((surface, pts));
+            
+            // Try to get a completed frame
+            self.get_completed_frame()
+        }
     }
     
     #[cfg(target_os = "linux")]
@@ -752,14 +754,14 @@ impl VaapiDecoder {
     /// Flush decoder
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
         let mut frames = Vec::new();
-
+        
         #[cfg(target_os = "linux")]
         {
             while let Ok(Some(frame)) = self.get_completed_frame() {
                 frames.push(frame);
             }
         }
-
+        
         frames
     }
     
@@ -790,7 +792,7 @@ impl Drop for VaapiDecoder {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 

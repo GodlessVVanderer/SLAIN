@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use ringbuf::traits::Observer;
 use symphonia::core::audio::{AudioBufferRef, Signal, SampleBuffer};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
@@ -23,7 +22,6 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
 use ringbuf::HeapRb;
-use ringbuf::traits::{Consumer, Producer, Split};
 use serde::{Deserialize, Serialize};
 
 
@@ -59,21 +57,17 @@ pub enum PlaybackState {
     Paused,
 }
 
-// AudioPlayer state that is Send + Sync
-pub struct AudioPlayerState {
+// Full player with stream (not Send due to cpal::Stream)
+pub struct AudioPlayer {
     // Playback state
     state: Arc<Mutex<PlaybackState>>,
     playing: Arc<AtomicBool>,
+    stop_signal: Arc<AtomicBool>,
     position_samples: Arc<AtomicU64>,
     sample_rate: Arc<AtomicU64>,
 
     // Volume (0.0 - 1.0)
     volume: Arc<Mutex<f32>>,
-}
-
-// Full player with stream (not Send due to cpal::Stream)
-pub struct AudioPlayer {
-    inner: AudioPlayerState,
 
     // Audio stream (not Send/Sync - kept out of global static)
     stream: Option<Stream>,
@@ -225,61 +219,68 @@ pub fn get_default_device() -> Result<Device, String> {
 impl AudioPlayer {
     pub fn new() -> Self {
         Self {
-            inner: AudioPlayerState {
-                state: Arc::new(Mutex::new(PlaybackState::Stopped)),
-                playing: Arc::new(AtomicBool::new(false)),
-                position_samples: Arc::new(AtomicU64::new(0)),
-                sample_rate: Arc::new(AtomicU64::new(44100)),
-                volume: Arc::new(Mutex::new(1.0)),
-            },
+            state: Arc::new(Mutex::new(PlaybackState::Stopped)),
+            playing: Arc::new(AtomicBool::new(false)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            position_samples: Arc::new(AtomicU64::new(0)),
+            sample_rate: Arc::new(AtomicU64::new(44100)),
             stream: None,
             producer: None,
             decode_thread: None,
+            volume: Arc::new(Mutex::new(1.0)),
         }
     }
     
     pub fn play_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         self.stop();
-
+        
         let path = path.as_ref().to_path_buf();
-
+        
         // Get audio info first
         let info = get_audio_info(&path)?;
-        self.inner.sample_rate.store(info.sample_rate as u64, Ordering::SeqCst);
-
+        self.sample_rate.store(info.sample_rate as u64, Ordering::SeqCst);
+        
         // Set up output device
         let device = get_default_device()?;
         let config = device.default_output_config()
             .map_err(|e| format!("Failed to get output config: {}", e))?;
-
+        
         // Create ring buffer (2 seconds of audio)
         let buffer_size = info.sample_rate as usize * info.channels as usize * 2;
         let ring = HeapRb::<f32>::new(buffer_size);
         let (producer, consumer) = ring.split();
-
+        
         self.producer = Some(producer);
-
+        
         // Create output stream
         let stream = self.create_output_stream(device, config, consumer)?;
         stream.play().map_err(|e| format!("Failed to start stream: {}", e))?;
         self.stream = Some(stream);
-
+        
         // Start decode thread
-        let playing = self.inner.playing.clone();
-        let position = self.inner.position_samples.clone();
+        let playing = self.playing.clone();
+        let stop_signal = self.stop_signal.clone();
+        let position = self.position_samples.clone();
         let mut producer = self.producer.take().unwrap();
-
+        
         playing.store(true, Ordering::SeqCst);
-
+        stop_signal.store(false, Ordering::SeqCst);
+        
         let decode_handle = thread::spawn(move || {
-            if let Err(e) = decode_audio_to_buffer(path, &mut producer, &playing, &position) {
+            if let Err(e) = decode_audio_to_buffer(
+                path,
+                &mut producer,
+                &playing,
+                &stop_signal,
+                &position,
+            ) {
                 eprintln!("Decode error: {}", e);
             }
         });
-
+        
         self.decode_thread = Some(decode_handle);
-        *self.inner.state.lock().unwrap() = PlaybackState::Playing;
-
+        *self.state.lock().unwrap() = PlaybackState::Playing;
+        
         Ok(())
     }
     
@@ -289,7 +290,7 @@ impl AudioPlayer {
         config: cpal::SupportedStreamConfig,
         mut consumer: ringbuf::HeapCons<f32>,
     ) -> Result<Stream, String> {
-        let volume = self.inner.volume.clone();
+        let volume = self.volume.clone();
         let sample_format = config.sample_format();
         let config: StreamConfig = config.into();
         
@@ -338,63 +339,64 @@ impl AudioPlayer {
     }
     
     pub fn pause(&mut self) {
-        self.inner.playing.store(false, Ordering::SeqCst);
+        self.playing.store(false, Ordering::SeqCst);
         if let Some(stream) = &self.stream {
             let _ = stream.pause();
         }
-        *self.inner.state.lock().unwrap() = PlaybackState::Paused;
+        *self.state.lock().unwrap() = PlaybackState::Paused;
     }
-
+    
     pub fn resume(&mut self) {
-        self.inner.playing.store(true, Ordering::SeqCst);
+        self.playing.store(true, Ordering::SeqCst);
         if let Some(stream) = &self.stream {
             let _ = stream.play();
         }
-        *self.inner.state.lock().unwrap() = PlaybackState::Playing;
+        *self.state.lock().unwrap() = PlaybackState::Playing;
     }
-
+    
     pub fn stop(&mut self) {
-        self.inner.playing.store(false, Ordering::SeqCst);
-
+        self.playing.store(false, Ordering::SeqCst);
+        self.stop_signal.store(true, Ordering::SeqCst);
+        
         // Stop stream
         if let Some(stream) = self.stream.take() {
             drop(stream);
         }
-
+        
         // Wait for decode thread
         if let Some(handle) = self.decode_thread.take() {
             let _ = handle.join();
         }
-
+        
         self.producer = None;
-        self.inner.position_samples.store(0, Ordering::SeqCst);
-        *self.inner.state.lock().unwrap() = PlaybackState::Stopped;
+        self.position_samples.store(0, Ordering::SeqCst);
+        *self.state.lock().unwrap() = PlaybackState::Stopped;
     }
-
+    
     pub fn set_volume(&mut self, volume: f32) {
-        *self.inner.volume.lock().unwrap() = volume.clamp(0.0, 1.0);
+        *self.volume.lock().unwrap() = volume.clamp(0.0, 1.0);
     }
-
+    
     pub fn get_volume(&self) -> f32 {
-        *self.inner.volume.lock().unwrap()
+        *self.volume.lock().unwrap()
     }
-
+    
     pub fn get_position_secs(&self) -> f64 {
-        let samples = self.inner.position_samples.load(Ordering::SeqCst);
-        let rate = self.inner.sample_rate.load(Ordering::SeqCst);
+        let samples = self.position_samples.load(Ordering::SeqCst);
+        let rate = self.sample_rate.load(Ordering::SeqCst);
         if rate > 0 {
             samples as f64 / rate as f64
         } else {
             0.0
         }
     }
-
+    
     pub fn get_state(&self) -> PlaybackState {
-        *self.inner.state.lock().unwrap()
+        *self.state.lock().unwrap()
     }
-
+    
     pub fn is_playing(&self) -> bool {
-        self.inner.playing.load(Ordering::SeqCst)
+        self.playing.load(Ordering::SeqCst)
     }
 }
 
@@ -412,6 +414,7 @@ fn decode_audio_to_buffer(
     path: std::path::PathBuf,
     producer: &mut ringbuf::HeapProd<f32>,
     playing: &AtomicBool,
+    stop_signal: &AtomicBool,
     position: &AtomicU64,
 ) -> Result<(), String> {
     let file = File::open(&path)
@@ -447,10 +450,9 @@ fn decode_audio_to_buffer(
         .make(&track.codec_params, &dec_opts)
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
     
-    // Get channel count - default to stereo if not specified in codec params
-    let channels = decoder.codec_params().channels
-        .map(|c| c.count())
-        .unwrap_or(2);  // Default to stereo
+    let spec = *decoder.codec_params().channels.as_ref()
+        .ok_or("No channel info")?;
+    let channels = spec.count();
     
     // Decode loop
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
@@ -458,6 +460,10 @@ fn decode_audio_to_buffer(
     
     loop {
         // Check if we should stop
+        if stop_signal.load(Ordering::SeqCst) {
+            break;
+        }
+
         if !playing.load(Ordering::SeqCst) {
             // Wait a bit when paused instead of busy-looping
             thread::sleep(Duration::from_millis(50));
@@ -510,8 +516,12 @@ fn decode_audio_to_buffer(
             for &sample in samples {
                 // Busy wait if buffer is full
                 while producer.is_full() {
-                    if !playing.load(Ordering::SeqCst) {
+                    if stop_signal.load(Ordering::SeqCst) {
                         return Ok(());
+                    }
+                    if !playing.load(Ordering::SeqCst) {
+                        thread::sleep(Duration::from_millis(50));
+                        continue;
                     }
                     thread::sleep(Duration::from_micros(100));
                 }
@@ -578,68 +588,69 @@ thread_local! {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
-pub fn audio_get_info(path: String) -> Result<AudioInfo, String> {
+
+pub async fn audio_get_info(path: String) -> Result<AudioInfo, String> {
     get_audio_info(&path)
 }
 
-pub fn audio_list_devices() -> Result<Vec<AudioDevice>, String> {
+
+pub async fn audio_list_devices() -> Result<Vec<AudioDevice>, String> {
     list_audio_devices()
 }
 
 
-pub fn audio_play(path: String) -> Result<(), String> {
-    AUDIO_PLAYER.with(|cell| {
-        cell.borrow_mut().play_file(&path)
-    })
+pub async fn audio_play(path: String) -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| player.borrow_mut().play_file(&path))
 }
 
-pub fn audio_pause() -> Result<(), String> {
-    AUDIO_PLAYER.with(|cell| {
-        cell.borrow_mut().pause();
-        Ok(())
-    })
+
+pub async fn audio_pause() -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().pause();
+    });
+    Ok(())
 }
 
-pub fn audio_resume() -> Result<(), String> {
-    AUDIO_PLAYER.with(|cell| {
-        cell.borrow_mut().resume();
-        Ok(())
-    })
+
+pub async fn audio_resume() -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().resume();
+    });
+    Ok(())
 }
 
-pub fn audio_stop() -> Result<(), String> {
-    AUDIO_PLAYER.with(|cell| {
-        cell.borrow_mut().stop();
-        Ok(())
-    })
+
+pub async fn audio_stop() -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().stop();
+    });
+    Ok(())
 }
 
-pub fn audio_set_volume(volume: f32) -> Result<(), String> {
-    AUDIO_PLAYER.with(|cell| {
-        cell.borrow_mut().set_volume(volume);
-        Ok(())
-    })
+
+pub async fn audio_set_volume(volume: f32) -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().set_volume(volume);
+    });
+    Ok(())
 }
 
-pub fn audio_get_volume() -> Result<f32, String> {
-    AUDIO_PLAYER.with(|cell| {
-        Ok(cell.borrow().get_volume())
-    })
+
+pub async fn audio_get_volume() -> Result<f32, String> {
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().get_volume()))
 }
 
-pub fn audio_get_position() -> Result<f64, String> {
-    AUDIO_PLAYER.with(|cell| {
-        Ok(cell.borrow().get_position_secs())
-    })
+
+pub async fn audio_get_position() -> Result<f64, String> {
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().get_position_secs()))
 }
 
-pub fn audio_is_playing() -> Result<bool, String> {
-    AUDIO_PLAYER.with(|cell| {
-        Ok(cell.borrow().is_playing())
-    })
+
+pub async fn audio_is_playing() -> Result<bool, String> {
+    AUDIO_PLAYER.with(|player| Ok(player.borrow().is_playing()))
 }
 
 // ============================================================================
@@ -670,6 +681,6 @@ pub fn supported_audio_formats() -> Vec<&'static str> {
 }
 
 
-pub fn audio_supported_formats() -> Vec<&'static str> {
+pub async fn audio_supported_formats() -> Vec<&'static str> {
     supported_audio_formats()
 }
