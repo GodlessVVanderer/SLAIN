@@ -1,0 +1,22 @@
+{
+  "fixtures": [
+    {
+      "id": "h264-mp4-640x360",
+      "codec": "H.264",
+      "container": "MP4",
+      "file": "sample_640x360.mp4",
+      "url": "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+      "frames": 60,
+      "suite": "smoke"
+    },
+    {
+      "id": "h264-mkv-640x360",
+      "codec": "H.264",
+      "container": "MKV",
+      "file": "sample_640x360.mkv",
+      "url": "https://filesamples.com/samples/video/mkv/sample_640x360.mkv",
+      "frames": 60,
+      "suite": "full"
+    }
+  ]
+}
