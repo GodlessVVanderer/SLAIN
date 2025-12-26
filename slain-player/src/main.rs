@@ -165,6 +165,7 @@ struct SlainApp {
     
     // Audio player from slain-core
     audio_player: Option<AudioPlayer>,
+    audio_started: bool,
     
     // Pipeline selection
     pipeline: PipelineKind,
@@ -207,6 +208,7 @@ impl SlainApp {
             duration_ms: 0,
             volume: 1.0,
             audio_player: None, // Lazy init on file load
+            audio_started: false,
             pipeline: PipelineKind::SoftwareOnly,
             pipeline_manager: None, // Lazy init on file load
             pipeline_script: String::new(),
@@ -238,6 +240,26 @@ impl SlainApp {
     /// Check if file is loaded and ready
     fn is_ready(&self) -> bool {
         matches!(self.playback_state, PlaybackState::Ready | PlaybackState::Playing | PlaybackState::Paused)
+    }
+
+    fn start_audio_if_needed(&mut self) {
+        if self.audio_started {
+            return;
+        }
+        let Some(path) = self.video_path.as_ref() else {
+            return;
+        };
+
+        if self.audio_player.is_none() {
+            self.audio_player = Some(AudioPlayer::new());
+        }
+        if let Some(ref mut player) = self.audio_player {
+            if let Err(e) = player.play_file(path) {
+                tracing::warn!("Audio failed: {}", e);
+                return;
+            }
+        }
+        self.audio_started = true;
     }
     
     /// Open a media file using slain-core parsers
@@ -285,16 +307,8 @@ impl SlainApp {
                             v.width, v.height, v.frame_rate.unwrap_or(0.0));
                         
                         // Find best decoder for codec
-                        let codec = match v.codec_id.as_str() {
-                            "V_MPEG4/ISO/AVC" => Some(HwCodec::H264),
-                            "V_MPEGH/ISO/HEVC" => Some(HwCodec::H265),
-                            "V_VP9" => Some(HwCodec::VP9),
-                            "V_AV1" => Some(HwCodec::AV1),
-                            _ => None,
-                        };
-                        
-                        if let Some(c) = codec {
-                            if let Some(dec) = find_best_decoder(c) {
+                        if let Ok(codec) = mkv_codec_to_hwcodec(&v.codec_id) {
+                            if let Some(dec) = find_best_decoder(codec) {
                                 self.decoder_name = format!("{:?}", dec);
                                 tracing::info!("Using decoder: {:?}", dec);
                             }
@@ -317,17 +331,11 @@ impl SlainApp {
                     decode_loop(shared, video_path, width, height);
                 }));
                 
-                // Start audio playback - lazy init audio player
-                if self.audio_player.is_none() {
-                    self.audio_player = Some(AudioPlayer::new());
-                }
-                if let Some(ref mut player) = self.audio_player {
-                    if let Err(e) = player.play_file(path) {
-                        tracing::warn!("Audio failed: {}", e);
-                    }
-                }
-                
-                self.playback_state = PlaybackState::Ready;
+                self.shared.is_playing.store(true, Ordering::SeqCst);
+                self.playback_state = PlaybackState::Playing;
+                self.playback_start_time = Some(Instant::now());
+                window_monitor().set_playing(true);
+                self.start_audio_if_needed();
             }
             Err(e) => {
                 tracing::error!("MKV parse error: {}", e);
@@ -442,36 +450,113 @@ impl SlainApp {
         self.playback_state = PlaybackState::Loading;
         
         tracing::info!("Opening AVI: {:?}", path);
-        // TODO: Wire up avi_demux module
-        
-        if self.audio_player.is_none() {
-            self.audio_player = Some(AudioPlayer::new());
-        }
-        if let Some(ref mut player) = self.audio_player {
-            if let Err(e) = player.play_file(path) {
-                tracing::warn!("Audio failed: {}", e);
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!("Failed to open AVI: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
+                return;
+            }
+        };
+        let reader = BufReader::new(file);
+
+        match AviDemuxer::new(reader) {
+            Ok(demuxer) => {
+                let info = demuxer.info();
+                self.duration_ms = (info.duration_us / 1000) as u64;
+                self.frame_width = info.width;
+                self.frame_height = info.height;
+                tracing::info!(
+                    "AVI Video: {}x{}, duration: {}ms",
+                    info.width,
+                    info.height,
+                    self.duration_ms
+                );
+
+                self.video_path = Some(path.clone());
+
+                self.stop_decode_thread();
+                let shared = self.shared.clone();
+                let video_path = path.clone();
+                let width = self.frame_width;
+                let height = self.frame_height;
+
+                self.decode_thread = Some(thread::spawn(move || {
+                    decode_loop(shared, video_path, width, height);
+                }));
+
+                self.shared.is_playing.store(true, Ordering::SeqCst);
+                self.playback_state = PlaybackState::Playing;
+                self.playback_start_time = Some(Instant::now());
+                window_monitor().set_playing(true);
+                self.start_audio_if_needed();
+            }
+            Err(e) => {
+                tracing::error!("AVI parse error: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
             }
         }
-        
-        self.playback_state = PlaybackState::Ready;
     }
     
     fn open_ts(&mut self, path: &PathBuf) {
         self.playback_state = PlaybackState::Loading;
         
         tracing::info!("Opening TS: {:?}", path);
-        // TODO: Wire up ts_demux module
-        
-        if self.audio_player.is_none() {
-            self.audio_player = Some(AudioPlayer::new());
-        }
-        if let Some(ref mut player) = self.audio_player {
-            if let Err(e) = player.play_file(path) {
-                tracing::warn!("Audio failed: {}", e);
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!("Failed to open TS: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
+                return;
+            }
+        };
+        let reader = BufReader::new(file);
+
+        match TsDemuxer::new(reader) {
+            Ok(demuxer) => {
+                let info = demuxer.info();
+                let video_stream = info
+                    .streams
+                    .iter()
+                    .find(|stream| matches!(stream.codec, TsStreamCodec::H264
+                        | TsStreamCodec::H265
+                        | TsStreamCodec::MPEG2Video
+                        | TsStreamCodec::MPEG1Video));
+                if video_stream.is_none() {
+                    tracing::error!("No supported video stream found in TS");
+                    self.playback_state = PlaybackState::Error("No video stream found".into());
+                    return;
+                }
+
+                self.video_path = Some(path.clone());
+
+                self.stop_decode_thread();
+                let shared = self.shared.clone();
+                let video_path = path.clone();
+                let width = self.frame_width;
+                let height = self.frame_height;
+
+                self.decode_thread = Some(thread::spawn(move || {
+                    decode_loop(shared, video_path, width, height);
+                }));
+
+                self.shared.is_playing.store(true, Ordering::SeqCst);
+                self.playback_state = PlaybackState::Playing;
+                self.playback_start_time = Some(Instant::now());
+                window_monitor().set_playing(true);
+                self.start_audio_if_needed();
+            }
+            Err(e) => {
+                tracing::error!("TS parse error: {}", e);
+                self.playback_state = PlaybackState::Error(e.to_string());
             }
         }
-        
-        self.playback_state = PlaybackState::Ready;
     }
     
     fn toggle_play(&mut self) {
@@ -492,6 +577,7 @@ impl SlainApp {
                 self.playback_state = PlaybackState::Playing;
                 self.shared.is_playing.store(true, Ordering::SeqCst);
                 window_monitor().set_playing(true);
+                self.start_audio_if_needed();
             }
             _ => {
                 // Can't toggle in other states
@@ -1322,15 +1408,15 @@ fn decode_loop(shared: Arc<PlaybackShared>, path: PathBuf, width: u32, height: u
     let result = match ext.as_str() {
         "mp4" | "m4v" | "mov" => decode_mp4(shared.clone(), &path, width, height),
         "mkv" | "webm" => decode_mkv(shared.clone(), &path, width, height),
+        "avi" => decode_avi(shared.clone(), &path, width, height),
+        "ts" | "mts" | "m2ts" => decode_ts(shared.clone(), &path, width, height),
         _ => {
-            tracing::info!("Unknown format {:?}, using test pattern", ext);
-            Ok(()) // Will fall through to test pattern
+            Err(format!("Unsupported container: {}", ext))
         }
     };
     
     if let Err(e) = result {
-        tracing::error!("Decode failed: {}, falling back to test pattern", e);
-        decode_test_pattern(shared, width, height);
+        tracing::error!("Decode failed: {}", e);
     }
     
     tracing::info!("Decode thread finished");
@@ -1482,6 +1568,272 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
         }
     }
     
+    Ok(())
+}
+
+/// AVI decoding using AviDemuxer + hw_decode + pixel_convert
+fn decode_avi(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u32) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path).map_err(|e| format!("Open error: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut demuxer = AviDemuxer::new(reader)?;
+    let info = demuxer.info();
+
+    let video_stream = info
+        .streams
+        .iter()
+        .find(|stream| matches!(stream.stream_type, slain_core::avi_demux::StreamType::Video))
+        .ok_or_else(|| "No video stream found in AVI".to_string())?;
+
+    let (vid_w, vid_h) = (
+        video_stream.width.unwrap_or(width),
+        video_stream.height.unwrap_or(height),
+    );
+
+    let codec = match video_stream.codec {
+        slain_core::avi_demux::CodecType::H264 => HwCodec::H264,
+        other => {
+            return Err(format!("Unsupported AVI codec: {:?}", other));
+        }
+    };
+
+    let config = DecoderConfig {
+        codec,
+        width: vid_w,
+        height: vid_h,
+        preferred_backend: None,
+        allow_software_fallback: true,
+        extra_data: None,
+    };
+
+    let mut decoder = HwDecoder::new(config)?;
+    let mut frame_number: u64 = 0;
+
+    while !shared.should_stop.load(Ordering::SeqCst) {
+        if !shared.is_playing.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        if shared.frame_queue.lock().len() >= 4 {
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+
+        if shared.seek_requested.load(Ordering::SeqCst) {
+            let target = shared.seek_target_ms.load(Ordering::SeqCst);
+            let _ = demuxer.seek((target as i64) * 1000);
+            shared.seek_requested.store(false, Ordering::SeqCst);
+            shared.frame_queue.lock().clear();
+        }
+
+        match demuxer.read_packet() {
+            Some(packet) => {
+                if packet.stream_index != video_stream.index {
+                    continue;
+                }
+
+                match decoder.decode(&packet.data, packet.pts) {
+                    Ok(Some(decoded)) => {
+                        let src_format = match decoded.format {
+                            slain_core::hw_decode::PixelFormat::NV12 => PxFormat::NV12,
+                            slain_core::hw_decode::PixelFormat::P010 => PxFormat::P010,
+                            _ => PxFormat::YUV420P,
+                        };
+
+                        let converter = PixelConverter::new(
+                            src_format,
+                            PxFormat::RGB24,
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            ColorSpace::BT709,
+                        );
+
+                        let mut src_frame = PxVideoFrame::new(
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            src_format,
+                        );
+                        src_frame.data = decoded.data;
+
+                        let mut dst_frame = PxVideoFrame::new(
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            PxFormat::RGB24,
+                        );
+
+                        if let Err(e) = converter.convert(&src_frame, &mut dst_frame) {
+                            tracing::warn!("Pixel convert error: {}", e);
+                            continue;
+                        }
+
+                        let pts_ms = if packet.pts > 0 {
+                            (packet.pts as u64) / 1000
+                        } else {
+                            frame_number * 33
+                        };
+                        shared.current_time_ms.store(pts_ms, Ordering::SeqCst);
+
+                        shared.frame_queue.lock().push_back(RgbFrame {
+                            data: dst_frame.data,
+                            width: decoded.width,
+                            height: decoded.height,
+                            pts_ms,
+                        });
+
+                        frame_number += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!("Decode error: {}", e);
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(16));
+            }
+            None => {
+                tracing::info!("End of AVI file");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// TS decoding using TsDemuxer + hw_decode + pixel_convert
+fn decode_ts(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u32) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path).map_err(|e| format!("Open error: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut demuxer = TsDemuxer::new(reader)?;
+    let info = demuxer.info();
+
+    let video_stream = info
+        .streams
+        .iter()
+        .find(|stream| matches!(stream.codec, TsStreamCodec::H264
+            | TsStreamCodec::H265
+            | TsStreamCodec::MPEG2Video
+            | TsStreamCodec::MPEG1Video))
+        .ok_or_else(|| "No video stream found in TS".to_string())?;
+
+    let codec = match video_stream.codec {
+        TsStreamCodec::H264 => HwCodec::H264,
+        TsStreamCodec::H265 => HwCodec::H265,
+        TsStreamCodec::MPEG2Video => HwCodec::MPEG2,
+        TsStreamCodec::MPEG1Video => HwCodec::MPEG2,
+        other => {
+            return Err(format!("Unsupported TS codec: {:?}", other));
+        }
+    };
+
+    let config = DecoderConfig {
+        codec,
+        width,
+        height,
+        preferred_backend: None,
+        allow_software_fallback: true,
+        extra_data: None,
+    };
+
+    let mut decoder = HwDecoder::new(config)?;
+    let mut frame_number: u64 = 0;
+
+    while !shared.should_stop.load(Ordering::SeqCst) {
+        if !shared.is_playing.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        if shared.frame_queue.lock().len() >= 4 {
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+
+        if shared.seek_requested.load(Ordering::SeqCst) {
+            shared.seek_requested.store(false, Ordering::SeqCst);
+            shared.frame_queue.lock().clear();
+        }
+
+        match demuxer.read_packet() {
+            Some(packet) => {
+                if packet.pid != video_stream.pid {
+                    continue;
+                }
+
+                let pts = packet.pts.unwrap_or(0);
+                match decoder.decode(&packet.data, pts) {
+                    Ok(Some(decoded)) => {
+                        let src_format = match decoded.format {
+                            slain_core::hw_decode::PixelFormat::NV12 => PxFormat::NV12,
+                            slain_core::hw_decode::PixelFormat::P010 => PxFormat::P010,
+                            _ => PxFormat::YUV420P,
+                        };
+
+                        let converter = PixelConverter::new(
+                            src_format,
+                            PxFormat::RGB24,
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            ColorSpace::BT709,
+                        );
+
+                        let mut src_frame = PxVideoFrame::new(
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            src_format,
+                        );
+                        src_frame.data = decoded.data;
+
+                        let mut dst_frame = PxVideoFrame::new(
+                            decoded.width as usize,
+                            decoded.height as usize,
+                            PxFormat::RGB24,
+                        );
+
+                        if let Err(e) = converter.convert(&src_frame, &mut dst_frame) {
+                            tracing::warn!("Pixel convert error: {}", e);
+                            continue;
+                        }
+
+                        let pts_ms = if pts > 0 {
+                            (pts as u64) / 1000
+                        } else {
+                            frame_number * 33
+                        };
+                        shared.current_time_ms.store(pts_ms, Ordering::SeqCst);
+
+                        shared.frame_queue.lock().push_back(RgbFrame {
+                            data: dst_frame.data,
+                            width: decoded.width,
+                            height: decoded.height,
+                            pts_ms,
+                        });
+
+                        frame_number += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!("Decode error: {}", e);
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(16));
+            }
+            None => {
+                tracing::info!("End of TS file");
+                break;
+            }
+        }
+    }
+
     Ok(())
 }
 
