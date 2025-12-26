@@ -268,10 +268,10 @@ impl PixelConverter {
             self.y_table[i] = (y * 298) >> 8;  // 298/256 ≈ 1.164
             
             // U/V contributions (scaled)
-            self.u_table_g[i] = (uv as f32 * matrix[1][1] * 256.0) as i32;
-            self.u_table_b[i] = (uv as f32 * matrix[2][1] * 256.0) as i32;
-            self.v_table_r[i] = (uv as f32 * matrix[0][2] * 256.0) as i32;
-            self.v_table_g[i] = (uv as f32 * matrix[1][2] * 256.0) as i32;
+            self.u_table_g[i] = ((uv as f32 * matrix[1][1] * 256.0) as i32);
+            self.u_table_b[i] = ((uv as f32 * matrix[2][1] * 256.0) as i32);
+            self.v_table_r[i] = ((uv as f32 * matrix[0][2] * 256.0) as i32);
+            self.v_table_g[i] = ((uv as f32 * matrix[1][2] * 256.0) as i32);
         }
     }
     
@@ -542,7 +542,7 @@ impl Scaler {
 }
 
 // ============================================================================
-// Public API
+// Public Rust API
 // ============================================================================
 
 
