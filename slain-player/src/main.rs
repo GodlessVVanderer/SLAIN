@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::collections::VecDeque;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::process::{Child, ChildStdout, Command, Stdio};
+use std::io::{Read, ErrorKind};
+use serde::Deserialize;
 use parking_lot::Mutex;
 
 // Import from our core library - NOT rewriting
@@ -79,6 +82,18 @@ struct RgbFrame {
     pts_ms: u64,
 }
 
+#[derive(Clone, Copy)]
+struct AppOptions {
+    use_ffmpeg: bool,
+}
+
+impl AppOptions {
+    fn from_args(args: &[String]) -> Self {
+        let use_ffmpeg = args.iter().any(|arg| arg == "--ffmpeg");
+        Self { use_ffmpeg }
+    }
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let headless_requested = args
@@ -126,7 +141,7 @@ fn main() -> Result<()> {
     eframe::run_native(
         "SLAIN Player",
         options,
-        Box::new(|cc| Ok(Box::new(SlainApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(SlainApp::new(cc, app_options)))),
     )
     .map_err(|e| anyhow::anyhow!("eframe error: {}", e))?;
 
@@ -153,6 +168,9 @@ struct SlainApp {
     current_time_ms: u64,
     duration_ms: u64,
     volume: f32,
+
+    // External decode support
+    ffmpeg_available: bool,
     
     // Audio player from slain-core
     audio_player: Option<AudioPlayer>,
@@ -165,6 +183,9 @@ struct SlainApp {
     // Decoder preference
     #[allow(dead_code)] // Will be used for decoder selection UI
     preferred_decoder: Option<HwDecoderType>,
+
+    // Playback backend
+    use_ffmpeg: bool,
     
     // Display
     video_texture: Option<TextureHandle>,
@@ -181,6 +202,7 @@ struct SlainApp {
     is_fullscreen: bool,
     #[allow(dead_code)]
     show_settings: bool,
+    show_controls: bool,
     
     // Stats
     fps: f32,
@@ -256,10 +278,17 @@ impl SlainApp {
             show_osd: true,
             is_fullscreen: false,
             show_settings: false,
+            show_controls: false,
             fps: 0.0,
             frame_count: 0,
             dropped_frames: 0,
             decoder_name: "None".to_string(),
+        }
+    }
+
+    fn apply_backend_change(&mut self) {
+        if let Some(path) = self.video_path.clone() {
+            self.open_file(path);
         }
     }
     
@@ -363,9 +392,10 @@ impl SlainApp {
                 let video_path = path.clone();
                 let width = self.frame_width;
                 let height = self.frame_height;
+                let use_ffmpeg = self.use_ffmpeg;
                 
                 self.decode_thread = Some(thread::spawn(move || {
-                    decode_loop(shared, video_path, width, height);
+                    decode_loop(shared, video_path, width, height, use_ffmpeg);
                 }));
                 
                 self.shared.is_playing.store(true, Ordering::SeqCst);
@@ -432,9 +462,10 @@ impl SlainApp {
                 let video_path = path.clone();
                 let width = self.frame_width;
                 let height = self.frame_height;
+                let use_ffmpeg = self.use_ffmpeg;
 
                 self.decode_thread = Some(thread::spawn(move || {
-                    decode_loop(shared, video_path, width, height);
+                    decode_loop(shared, video_path, width, height, use_ffmpeg);
                 }));
 
                 self.shared.is_playing.store(true, Ordering::SeqCst);
@@ -670,6 +701,30 @@ impl eframe::App for SlainApp {
                         ui.close_menu();
                     }
                 });
+
+                ui.menu_button("Playback", |ui| {
+                    let mut use_ffmpeg = self.use_ffmpeg;
+                    let checkbox = egui::Checkbox::new(
+                        &mut use_ffmpeg,
+                        "Use FFmpeg sidecar (max compatibility)",
+                    );
+                    let response = ui.add_enabled(self.ffmpeg_available, checkbox);
+                    if response.changed() {
+                        self.use_ffmpeg = use_ffmpeg;
+                        self.apply_backend_change();
+                        ui.close_menu();
+                    }
+
+                    if !self.ffmpeg_available {
+                        ui.label("FFmpeg not found on PATH.");
+                    }
+
+                    ui.separator();
+                    ui.label(format!(
+                        "Backend: {}",
+                        if self.use_ffmpeg { "FFmpeg" } else { "Native" }
+                    ));
+                });
                 
                 ui.menu_button("Pipeline", |ui| {
                     if self.pipeline_manager.is_none() {
@@ -691,6 +746,13 @@ impl eframe::App for SlainApp {
                 ui.menu_button("Audio", |ui| {
                     ui.label("Volume:");
                     ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false));
+                });
+
+                ui.menu_button("Help", |ui| {
+                    if ui.button("Controls & Shortcuts").clicked() {
+                        self.show_controls = true;
+                        ui.close_menu();
+                    }
                 });
             });
         });
@@ -767,7 +829,7 @@ impl eframe::App for SlainApp {
                 if self.show_osd && self.video_path.is_some() {
                     let osd_rect = egui::Rect::from_min_size(
                         rect.min + egui::vec2(10.0, 10.0),
-                        egui::vec2(250.0, 140.0),
+                        egui::vec2(260.0, 170.0),
                     );
                     
                     ui.allocate_new_ui(egui::UiBuilder::new().max_rect(osd_rect), |ui| {
@@ -783,6 +845,18 @@ impl eframe::App for SlainApp {
                                     self.frame_width, self.frame_height));
                                 ui.label(format!("Decoder: {}", self.decoder_name));
                                 ui.label(format!("Pipeline: {:?}", self.pipeline));
+                                ui.label(format!(
+                                    "Backend: {}",
+                                    if self.use_ffmpeg { "FFmpeg" } else { "Native" }
+                                ));
+                                ui.label(format!(
+                                    "FFmpeg: {}",
+                                    if self.ffmpeg_available {
+                                        "available"
+                                    } else {
+                                        "missing"
+                                    }
+                                ));
                                 ui.label(format!("FPS: {:.1}", self.fps));
                                 ui.label(format!("Volume: {:.0}%", self.volume * 100.0));
                             });
@@ -845,6 +919,26 @@ impl eframe::App for SlainApp {
                 
                 ui.add_space(4.0);
             });
+
+        if self.show_controls {
+            egui::Window::new("Controls & Shortcuts")
+                .open(&mut self.show_controls)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Playback");
+                    ui.separator();
+                    ui.label("Space: Play/Pause");
+                    ui.label("⏪ / ⏩ buttons: Seek ±10s");
+                    ui.label("Arrow Left/Right: Seek ±5s");
+                    ui.label("Arrow Up/Down: Volume ±5%");
+                    ui.label("F or Alt+Enter: Toggle fullscreen");
+                    ui.label("Tab: Toggle OSD");
+                    ui.label("Esc: Exit fullscreen");
+                    ui.separator();
+                    ui.label("Mouse");
+                    ui.label("Drag & drop: Open media");
+                });
+        }
         
         // Handle drag & drop
         ctx.input(|i| {
