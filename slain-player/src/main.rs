@@ -76,12 +76,25 @@ struct RgbFrame {
 }
 
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let headless_requested = args
+        .get(1)
+        .map(|arg| arg == "--headless" || arg == "headless")
+        .unwrap_or(false);
+
+    if headless_requested {
+        tracing_subscriber::fmt()
+            .with_env_filter("slain=info,wgpu=warn,eframe=warn")
+            .init();
+        return run_headless(&args);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter("slain=debug,wgpu=warn,eframe=warn")
         .init();
 
     tracing::info!("SLAIN Player v{}", env!("CARGO_PKG_VERSION"));
-    
+
     // Log available decoders
     let decoders = available_decoders();
     tracing::info!("Available decoders: {:?}", decoders);
@@ -980,8 +993,370 @@ fn format_time(ms: u64) -> String {
 }
 
 // ============================================================================
+// Headless Playback
+// ============================================================================
+
+fn mp4_codec_to_hwcodec(codec: &slain_core::mp4_demux::CodecId) -> Result<HwCodec, String> {
+    match codec {
+        slain_core::mp4_demux::CodecId::Video(codec) => match codec {
+            slain_core::mp4_demux::VideoCodec::H264 => Ok(HwCodec::H264),
+            slain_core::mp4_demux::VideoCodec::H265 => Ok(HwCodec::H265),
+            slain_core::mp4_demux::VideoCodec::VP8 => Ok(HwCodec::VP8),
+            slain_core::mp4_demux::VideoCodec::VP9 => Ok(HwCodec::VP9),
+            slain_core::mp4_demux::VideoCodec::AV1 => Ok(HwCodec::AV1),
+            slain_core::mp4_demux::VideoCodec::MPEG2 => Ok(HwCodec::MPEG2),
+            slain_core::mp4_demux::VideoCodec::VC1 => Ok(HwCodec::VC1),
+            other => Err(format!("Unsupported MP4 codec: {:?}", other)),
+        },
+        other => Err(format!("Unsupported MP4 stream: {:?}", other)),
+    }
+}
+
+fn mkv_codec_to_hwcodec(codec_id: &str) -> Result<HwCodec, String> {
+    match codec_id {
+        "V_MPEG4/ISO/AVC" => Ok(HwCodec::H264),
+        "V_MPEGH/ISO/HEVC" => Ok(HwCodec::H265),
+        "V_VP8" => Ok(HwCodec::VP8),
+        "V_VP9" => Ok(HwCodec::VP9),
+        "V_AV1" => Ok(HwCodec::AV1),
+        "V_MPEG2" => Ok(HwCodec::MPEG2),
+        "V_MS/VFW/FOURCC" => Ok(HwCodec::VC1),
+        other => Err(format!("Unsupported MKV codec: {}", other)),
+    }
+}
+
+struct HeadlessOptions {
+    input: PathBuf,
+    frames: u64,
+}
+
+fn run_headless(args: &[String]) -> Result<()> {
+    let options = parse_headless_args(args)?;
+
+    tracing::info!(
+        "Headless playback starting: input={:?}, frames={}",
+        options.input,
+        options.frames
+    );
+
+    let ext = options
+        .input
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let stats = match ext.as_str() {
+        "mp4" | "m4v" | "mov" => decode_mp4_headless(&options.input, options.frames)
+            .map_err(|e| anyhow::anyhow!(e))?,
+        "mkv" | "webm" => decode_mkv_headless(&options.input, options.frames)
+            .map_err(|e| anyhow::anyhow!(e))?,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unsupported container for headless playback: {:?}",
+                ext
+            ));
+        }
+    };
+
+    tracing::info!(
+        "Headless playback complete: decoded_frames={}, duration_ms={}",
+        stats.decoded_frames,
+        stats.duration_ms
+    );
+
+    Ok(())
+}
+
+fn parse_headless_args(args: &[String]) -> Result<HeadlessOptions> {
+    let mut input: Option<PathBuf> = None;
+    let mut frames: u64 = 120;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--headless" | "headless" => {
+                i += 1;
+            }
+            "--input" | "-i" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    anyhow::anyhow!("Missing value for --input")
+                })?;
+                input = Some(PathBuf::from(value));
+                i += 2;
+            }
+            "--frames" | "-n" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    anyhow::anyhow!("Missing value for --frames")
+                })?;
+                frames = value.parse::<u64>().map_err(|e| {
+                    anyhow::anyhow!("Invalid frame count {}: {}", value, e)
+                })?;
+                i += 2;
+            }
+            "--help" | "-h" => {
+                print_headless_usage();
+                std::process::exit(0);
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    let input = input.ok_or_else(|| {
+        print_headless_usage();
+        anyhow::anyhow!("Missing required --input for headless playback")
+    })?;
+
+    Ok(HeadlessOptions { input, frames })
+}
+
+fn print_headless_usage() {
+    eprintln!(
+        "\nHeadless playback usage:\n  slain --headless --input <file> [--frames <n>]\n"
+    );
+}
+
+// ============================================================================
 // Decode Thread
 // ============================================================================
+
+struct HeadlessStats {
+    decoded_frames: u64,
+    duration_ms: u64,
+}
+
+fn decode_mp4_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessStats, String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path).map_err(|e| format!("Open error: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut demuxer = Mp4Demuxer::new(reader).map_err(|e| format!("Demux init: {}", e))?;
+
+    let streams = demuxer.streams();
+    let (video_idx, video_info) = streams
+        .iter()
+        .enumerate()
+        .find(|(_, s)| matches!(s.codec_type, slain_core::mp4_demux::CodecType::Video))
+        .ok_or_else(|| "No video stream found in MP4".to_string())?;
+
+    let (vid_w, vid_h) = if let Some(vi) = demuxer.video_info(video_idx) {
+        (vi.width, vi.height)
+    } else {
+        (1920, 1080)
+    };
+
+    let codec = mp4_codec_to_hwcodec(&video_info.codec)
+        .map_err(|e| format!("Unsupported MP4 codec for headless: {}", e))?;
+
+    let config = DecoderConfig {
+        codec,
+        width: vid_w,
+        height: vid_h,
+        preferred_backend: None,
+        allow_software_fallback: true,
+        extra_data: Some(video_info.extra_data.clone()),
+    };
+
+    let mut decoder = HwDecoder::new(config)?;
+
+    let mut decoded_frames: u64 = 0;
+    let mut last_pts_ms: u64 = 0;
+    let mut converter: Option<PixelConverter> = None;
+    let mut converter_format: Option<PxFormat> = None;
+    let mut converter_dims: Option<(u32, u32)> = None;
+
+    while decoded_frames < target_frames {
+        let packet = demuxer
+            .read_packet()
+            .ok_or_else(|| "Reached end of MP4 before target frames".to_string())?;
+
+        if packet.stream_index != video_idx as u32 {
+            continue;
+        }
+
+        match decoder.decode(&packet.data, packet.pts) {
+            Ok(Some(decoded)) => {
+                let src_format = match decoded.format {
+                    slain_core::hw_decode::PixelFormat::NV12 => PxFormat::NV12,
+                    slain_core::hw_decode::PixelFormat::P010 => PxFormat::P010,
+                    _ => PxFormat::YUV420P,
+                };
+
+                let needs_new_converter = converter.is_none()
+                    || converter_format != Some(src_format)
+                    || converter_dims != Some((decoded.width, decoded.height));
+
+                if needs_new_converter {
+                    converter = Some(PixelConverter::new(
+                        src_format,
+                        PxFormat::RGB24,
+                        decoded.width as usize,
+                        decoded.height as usize,
+                        ColorSpace::BT709,
+                    ));
+                    converter_format = Some(src_format);
+                    converter_dims = Some((decoded.width, decoded.height));
+                }
+
+                let mut src_frame = PxVideoFrame::new(
+                    decoded.width as usize,
+                    decoded.height as usize,
+                    src_format,
+                );
+                src_frame.data = decoded.data;
+
+                let mut dst_frame = PxVideoFrame::new(
+                    decoded.width as usize,
+                    decoded.height as usize,
+                    PxFormat::RGB24,
+                );
+
+                if let Some(ref converter) = converter {
+                    converter
+                        .convert(&src_frame, &mut dst_frame)
+                        .map_err(|e| format!("Pixel convert error: {}", e))?;
+                }
+
+                let pts_ms = if packet.pts_ms > 0 {
+                    packet.pts_ms as u64
+                } else {
+                    decoded_frames * 33
+                };
+                last_pts_ms = pts_ms;
+                decoded_frames += 1;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return Err(format!("Decode error: {}", e));
+            }
+        }
+    }
+
+    Ok(HeadlessStats {
+        decoded_frames,
+        duration_ms: last_pts_ms,
+    })
+}
+
+fn decode_mkv_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessStats, String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let mut parser = MkvParser::new();
+    let info = parser.parse(path)?;
+
+    let file = File::open(path).map_err(|e| format!("Open error: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut demuxer = MkvDemuxer::new(reader, info.clone())?;
+
+    let video_track_num = demuxer
+        .video_track()
+        .ok_or_else(|| "No video track found in MKV".to_string())?;
+
+    let (vid_w, vid_h, codec_id) = info
+        .tracks
+        .iter()
+        .find_map(|t| {
+            if let MkvTrack::Video(v) = t {
+                Some((v.pixel_width, v.pixel_height, v.codec_id.clone()))
+            } else {
+                None
+            }
+        })
+        .unwrap_or((1920, 1080, String::new()));
+
+    let codec = mkv_codec_to_hwcodec(&codec_id)
+        .map_err(|e| format!("Unsupported MKV codec for headless: {}", e))?;
+
+    let config = DecoderConfig {
+        codec,
+        width: vid_w,
+        height: vid_h,
+        preferred_backend: None,
+        allow_software_fallback: true,
+        extra_data: None,
+    };
+
+    let mut decoder = HwDecoder::new(config)?;
+
+    let mut decoded_frames: u64 = 0;
+    let mut last_pts_ms: u64 = 0;
+    let mut converter: Option<PixelConverter> = None;
+    let mut converter_format: Option<PxFormat> = None;
+    let mut converter_dims: Option<(u32, u32)> = None;
+
+    while decoded_frames < target_frames {
+        let packet = demuxer
+            .read_packet()
+            .ok_or_else(|| "Reached end of MKV before target frames".to_string())?;
+
+        if packet.track_number != video_track_num {
+            continue;
+        }
+
+        match decoder.decode(&packet.data, packet.pts_ms) {
+            Ok(Some(decoded)) => {
+                let src_format = match decoded.format {
+                    slain_core::hw_decode::PixelFormat::NV12 => PxFormat::NV12,
+                    slain_core::hw_decode::PixelFormat::P010 => PxFormat::P010,
+                    _ => PxFormat::YUV420P,
+                };
+
+                let needs_new_converter = converter.is_none()
+                    || converter_format != Some(src_format)
+                    || converter_dims != Some((decoded.width, decoded.height));
+
+                if needs_new_converter {
+                    converter = Some(PixelConverter::new(
+                        src_format,
+                        PxFormat::RGB24,
+                        decoded.width as usize,
+                        decoded.height as usize,
+                        ColorSpace::BT709,
+                    ));
+                    converter_format = Some(src_format);
+                    converter_dims = Some((decoded.width, decoded.height));
+                }
+
+                let mut src_frame = PxVideoFrame::new(
+                    decoded.width as usize,
+                    decoded.height as usize,
+                    src_format,
+                );
+                src_frame.data = decoded.data;
+
+                let mut dst_frame = PxVideoFrame::new(
+                    decoded.width as usize,
+                    decoded.height as usize,
+                    PxFormat::RGB24,
+                );
+
+                if let Some(ref converter) = converter {
+                    converter
+                        .convert(&src_frame, &mut dst_frame)
+                        .map_err(|e| format!("Pixel convert error: {}", e))?;
+                }
+
+                last_pts_ms = packet.pts_ms.max(0) as u64;
+                decoded_frames += 1;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return Err(format!("Decode error: {}", e));
+            }
+        }
+    }
+
+    Ok(HeadlessStats {
+        decoded_frames,
+        duration_ms: last_pts_ms,
+    })
+}
 
 /// Main decode loop - runs in separate thread
 /// Reads packets from demuxer → decodes → converts to RGB → pushes to queue
@@ -1035,21 +1410,24 @@ fn decode_mkv(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
     };
     
     // Get dimensions from track info
-    let (vid_w, vid_h) = info.tracks.iter()
+    let (vid_w, vid_h, codec_id) = info
+        .tracks
+        .iter()
         .find_map(|t| {
             if let MkvTrack::Video(v) = t {
-                Some((v.pixel_width, v.pixel_height))
+                Some((v.pixel_width, v.pixel_height, v.codec_id.clone()))
             } else {
                 None
             }
         })
-        .unwrap_or((width, height));
+        .unwrap_or((width, height, String::new()));
     
     tracing::info!("MKV demuxer ready: {}x{}, video track {}", vid_w, vid_h, video_track_num);
     
     // Create hardware decoder (tries NVDEC → AMF → VAAPI → Software)
+    let codec = mkv_codec_to_hwcodec(&codec_id)?;
     let config = DecoderConfig {
-        codec: HwCodec::H264, // TODO: Detect from codec_id
+        codec,
         width: vid_w,
         height: vid_h,
         preferred_backend: None,  // Auto-detect best available
@@ -1188,8 +1566,9 @@ fn decode_mp4(shared: Arc<PlaybackShared>, path: &PathBuf, width: u32, height: u
     };
     
     // Create hardware decoder (tries NVDEC → AMF → VAAPI → Software)
+    let codec = mp4_codec_to_hwcodec(&video_info.codec)?;
     let config = DecoderConfig {
-        codec: HwCodec::H264, // Assume H.264 for now
+        codec,
         width: vid_w,
         height: vid_h,
         preferred_backend: None,  // Auto-detect best available
