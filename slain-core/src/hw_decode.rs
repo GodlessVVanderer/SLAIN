@@ -399,61 +399,109 @@ impl HwDecoder {
 }
 
 // ============================================================================
-// Software Decoder (CPU fallback)
+// Software Decoder (CPU fallback using OpenH264)
 // ============================================================================
-#[derive(Clone)]
+
+use openh264::decoder::Decoder as OpenH264Decoder;
+use openh264::formats::YUVSource;
+
 pub struct SoftwareDecoder {
     config: DecoderConfig,
-    frame_counter: u64,
+    h264_decoder: Option<OpenH264Decoder>,
+    width: u32,
+    height: u32,
 }
 
 impl SoftwareDecoder {
     pub fn new(config: DecoderConfig) -> Result<Self, String> {
+        // Create OpenH264 decoder for H.264 content
+        let h264_decoder = if config.codec == HwCodec::H264 {
+            match OpenH264Decoder::new() {
+                Ok(dec) => {
+                    tracing::info!("OpenH264 software decoder initialized");
+                    Some(dec)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create OpenH264 decoder: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::warn!("Software decoder only supports H.264, got {:?}", config.codec);
+            None
+        };
+        
         Ok(Self {
+            width: config.width,
+            height: config.height,
             config,
-            frame_counter: 0,
+            h264_decoder,
         })
     }
-    /// Decode compressed data into a raw frame.
-    /// NOTE: This is a placeholder software decoder.
+    
+    /// Decode compressed H.264 NAL units into YUV420 frames
     pub fn decode(
         &mut self,
-        _data: &[u8],
+        data: &[u8],
         pts: i64,
     ) -> Result<Option<DecodedFrame>, String> {
-        // TEMPORARY: generate a synthetic frame so the pipeline works
-        // This proves decode → render → timing is functional
-        self.frame_counter += 1;
-        let width = self.config.width.max(1);
-        let height = self.config.height.max(1);
-        let frame_size = (width * height * 3) as usize; // RGB24
-        let mut buffer = vec![0u8; frame_size];
-        // Simple moving color pattern so you SEE motion
-        let color = (self.frame_counter % 255) as u8;
-        for pixel in buffer.chunks_exact_mut(3) {
-            pixel[0] = color;         // R
-            pixel[1] = 255 - color;   // G
-            pixel[2] = color / 2;     // B
-        }
+        let decoder = match &mut self.h264_decoder {
+            Some(d) => d,
+            None => return Err("No H.264 decoder available".to_string()),
+        };
+        
+        // Decode the NAL unit
+        let yuv = match decoder.decode(data) {
+            Ok(Some(yuv)) => yuv,
+            Ok(None) => {
+                // Decoder needs more data (buffering)
+                return Ok(None);
+            }
+            Err(e) => {
+                // Don't fail completely on decode errors - some frames may be corrupt
+                tracing::trace!("OpenH264 decode error: {:?}", e);
+                return Ok(None);
+            }
+        };
+        
+        // Get dimensions from decoded frame
+        let (width, height) = yuv.dimensions();
+        self.width = width as u32;
+        self.height = height as u32;
+        
+        // Get YUV plane data - OpenH264 returns packed data
+        let y_data = yuv.y();
+        let u_data = yuv.u();
+        let v_data = yuv.v();
+        
+        // Build YUV420 planar buffer
+        let mut yuv_data = Vec::with_capacity(y_data.len() + u_data.len() + v_data.len());
+        yuv_data.extend_from_slice(y_data);
+        yuv_data.extend_from_slice(u_data);
+        yuv_data.extend_from_slice(v_data);
+        
         Ok(Some(DecodedFrame {
             pts,
-            width,
-            height,
-            pitch: width * 3,
-            format: PixelFormat::YUV420, // placeholder
-            data: buffer,
+            width: self.width,
+            height: self.height,
+            pitch: self.width,
+            format: PixelFormat::YUV420,
+            data: yuv_data,
             progressive: true,
         }))
     }
+    
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
+        // OpenH264 doesn't have explicit flush, frames come out immediately
         Vec::new()
     }
+    
     pub fn info(&self) -> DecoderInfo {
         DecoderInfo {
             backend: HwDecoderType::Software,
             codec: self.config.codec,
-            width: self.config.width,
-            height: self.config.height,
+            width: self.width,
+            height: self.height,
             pixel_format: PixelFormat::YUV420,
             max_surfaces: 1,
         }

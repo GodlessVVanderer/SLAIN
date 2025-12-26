@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 // AMF Types (from AMF SDK headers)
 // ============================================================================
 
-type AMF_RESULT = i32;
+type AmfResult = i32;
 type AMFContext = *mut c_void;
 type AMFComponent = *mut c_void;
 type AMFSurface = *mut c_void;
@@ -33,12 +33,12 @@ type AMFTrace = *mut c_void;
 type AMFPlane = *mut c_void;
 
 // AMF Result codes
-const AMF_OK: AMF_RESULT = 0;
-const AMF_FAIL: AMF_RESULT = 1;
-const AMF_EOF: AMF_RESULT = 11;
-const AMF_REPEAT: AMF_RESULT = 12;
-const AMF_INPUT_FULL: AMF_RESULT = 13;
-const AMF_NEED_MORE_INPUT: AMF_RESULT = 24;
+const AMF_OK: AmfResult = 0;
+const AMF_FAIL: AmfResult = 1;
+const AMF_EOF: AmfResult = 11;
+const AMF_REPEAT: AmfResult = 12;
+const AMF_INPUT_FULL: AmfResult = 13;
+const AMF_NEED_MORE_INPUT: AmfResult = 24;
 
 // Memory types
 const AMF_MEMORY_UNKNOWN: i32 = 0;
@@ -91,16 +91,16 @@ const AMF_VIDEO_DECODER_AV1: &str = "AMFVideoDecoderHW_AV1";
 struct AMFFactoryVtbl {
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_trace: unsafe extern "C" fn(*mut c_void, *mut AMFTrace) -> AMF_RESULT,
-    get_debug: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    get_runtime: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    create_context: unsafe extern "C" fn(*mut c_void, *mut AMFContext) -> AMF_RESULT,
-    create_component: unsafe extern "C" fn(*mut c_void, AMFContext, *const u16, *mut AMFComponent) -> AMF_RESULT,
-    set_cache_folder: unsafe extern "C" fn(*mut c_void, *const u16) -> AMF_RESULT,
-    get_cache_folder: unsafe extern "C" fn(*mut c_void, *mut *const u16) -> AMF_RESULT,
-    get_debug_object: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    load_external_component: unsafe extern "C" fn(*mut c_void, AMFContext, *const u16, *const u16, *mut AMFComponent) -> AMF_RESULT,
-    unload_external_component: unsafe extern "C" fn(*mut c_void, *const u16) -> AMF_RESULT,
+    get_trace: unsafe extern "C" fn(*mut c_void, *mut AMFTrace) -> AmfResult,
+    get_debug: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    get_runtime: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    create_context: unsafe extern "C" fn(*mut c_void, *mut AMFContext) -> AmfResult,
+    create_component: unsafe extern "C" fn(*mut c_void, AMFContext, *const u16, *mut AMFComponent) -> AmfResult,
+    set_cache_folder: unsafe extern "C" fn(*mut c_void, *const u16) -> AmfResult,
+    get_cache_folder: unsafe extern "C" fn(*mut c_void, *mut *const u16) -> AmfResult,
+    get_debug_object: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    load_external_component: unsafe extern "C" fn(*mut c_void, AMFContext, *const u16, *const u16, *mut AMFComponent) -> AmfResult,
+    unload_external_component: unsafe extern "C" fn(*mut c_void, *const u16) -> AmfResult,
 }
 
 #[repr(C)]
@@ -113,50 +113,50 @@ struct AMFFactoryObj {
 struct AMFContextVtbl {
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AMF_RESULT,
-    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AMF_RESULT,
-    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AMF_RESULT,
-    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AMF_RESULT,
-    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AMF_RESULT,
-    clear: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AMF_RESULT,
-    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    terminate: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_dx9: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    get_dx9_device: unsafe extern "C" fn(*mut c_void, i32, *mut *mut c_void) -> AMF_RESULT,
-    lock_dx9: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_dx9: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_dx11: unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> AMF_RESULT,
-    get_dx11_device: unsafe extern "C" fn(*mut c_void, i32, *mut *mut c_void) -> AMF_RESULT,
-    lock_dx11: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_dx11: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_opengl: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> AMF_RESULT,
-    get_opengl_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    get_opengl_draw_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    lock_opengl: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_opengl: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_opencl: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    get_opencl_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    get_opencl_command_queue: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    get_opencl_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    lock_opencl: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_opencl: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_xv: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> AMF_RESULT,
-    get_xv_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    lock_xv: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_xv: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    init_gralloc: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    lock_gralloc: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_gralloc: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    alloc_surface: unsafe extern "C" fn(*mut c_void, i32, i32, i32, i32, *mut AMFSurface) -> AMF_RESULT,
-    create_surface_from_host_native: unsafe extern "C" fn(*mut c_void, *mut c_void, i32, i32, i32, i32, i32, *mut AMFSurface) -> AMF_RESULT,
-    alloc_buffer: unsafe extern "C" fn(*mut c_void, i32, usize, *mut AMFBuffer) -> AMF_RESULT,
-    create_buffer_from_host_native: unsafe extern "C" fn(*mut c_void, *mut c_void, usize, *mut AMFBuffer, *mut c_void) -> AMF_RESULT,
-    init_vulkan: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    get_vulkan_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    lock_vulkan: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    unlock_vulkan: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
+    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AmfResult,
+    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AmfResult,
+    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
+    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AmfResult,
+    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AmfResult,
+    clear: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AmfResult,
+    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    terminate: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_dx9: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    get_dx9_device: unsafe extern "C" fn(*mut c_void, i32, *mut *mut c_void) -> AmfResult,
+    lock_dx9: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_dx9: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_dx11: unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> AmfResult,
+    get_dx11_device: unsafe extern "C" fn(*mut c_void, i32, *mut *mut c_void) -> AmfResult,
+    lock_dx11: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_dx11: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_opengl: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> AmfResult,
+    get_opengl_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    get_opengl_draw_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    lock_opengl: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_opengl: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_opencl: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    get_opencl_context: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    get_opencl_command_queue: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    get_opencl_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    lock_opencl: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_opencl: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_xv: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> AmfResult,
+    get_xv_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    lock_xv: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_xv: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    init_gralloc: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    lock_gralloc: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_gralloc: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    alloc_surface: unsafe extern "C" fn(*mut c_void, i32, i32, i32, i32, *mut AMFSurface) -> AmfResult,
+    create_surface_from_host_native: unsafe extern "C" fn(*mut c_void, *mut c_void, i32, i32, i32, i32, i32, *mut AMFSurface) -> AmfResult,
+    alloc_buffer: unsafe extern "C" fn(*mut c_void, i32, usize, *mut AMFBuffer) -> AmfResult,
+    create_buffer_from_host_native: unsafe extern "C" fn(*mut c_void, *mut c_void, usize, *mut AMFBuffer, *mut c_void) -> AmfResult,
+    init_vulkan: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    get_vulkan_device: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    lock_vulkan: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    unlock_vulkan: unsafe extern "C" fn(*mut c_void) -> AmfResult,
 }
 
 #[repr(C)]
@@ -169,27 +169,27 @@ struct AMFContextObj {
 struct AMFComponentVtbl {
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AMF_RESULT,
-    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AMF_RESULT,
-    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AMF_RESULT,
-    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AMF_RESULT,
-    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AMF_RESULT,
-    clear: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AMF_RESULT,
-    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    init: unsafe extern "C" fn(*mut c_void, i32, i32, i32) -> AMF_RESULT,
-    reinit: unsafe extern "C" fn(*mut c_void, i32, i32, i32) -> AMF_RESULT,
-    terminate: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    drain: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    flush: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    submit_input: unsafe extern "C" fn(*mut c_void, AMFData) -> AMF_RESULT,
-    query_output: unsafe extern "C" fn(*mut c_void, *mut AMFData) -> AMF_RESULT,
-    get_context: unsafe extern "C" fn(*mut c_void, *mut AMFContext) -> AMF_RESULT,
-    set_output_data_allocator: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    get_output_data_allocator: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    get_caps: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AMF_RESULT,
-    optimize: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
+    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AmfResult,
+    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AmfResult,
+    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
+    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AmfResult,
+    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AmfResult,
+    clear: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AmfResult,
+    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    init: unsafe extern "C" fn(*mut c_void, i32, i32, i32) -> AmfResult,
+    reinit: unsafe extern "C" fn(*mut c_void, i32, i32, i32) -> AmfResult,
+    terminate: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    drain: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    flush: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    submit_input: unsafe extern "C" fn(*mut c_void, AMFData) -> AmfResult,
+    query_output: unsafe extern "C" fn(*mut c_void, *mut AMFData) -> AmfResult,
+    get_context: unsafe extern "C" fn(*mut c_void, *mut AMFContext) -> AmfResult,
+    set_output_data_allocator: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    get_output_data_allocator: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    get_caps: unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
+    optimize: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
 }
 
 #[repr(C)]
@@ -202,19 +202,19 @@ struct AMFComponentObj {
 struct AMFDataVtbl {
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AMF_RESULT,
-    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AMF_RESULT,
-    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AMF_RESULT,
-    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AMF_RESULT,
-    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AMF_RESULT,
-    clear: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AMF_RESULT,
-    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
+    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AmfResult,
+    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AmfResult,
+    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
+    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AmfResult,
+    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AmfResult,
+    clear: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AmfResult,
+    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
     get_memory_type: unsafe extern "C" fn(*mut c_void) -> i32,
-    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AMF_RESULT,
-    convert: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
-    interop: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
+    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AmfResult,
+    convert: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
+    interop: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
     get_data_type: unsafe extern "C" fn(*mut c_void) -> i32,
     is_reusable: unsafe extern "C" fn(*mut c_void) -> bool,
     set_pts: unsafe extern "C" fn(*mut c_void, i64),
@@ -234,19 +234,19 @@ struct AMFBufferVtbl {
     // Inherits from AMFData
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AMF_RESULT,
-    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AMF_RESULT,
-    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AMF_RESULT,
-    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AMF_RESULT,
-    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AMF_RESULT,
-    clear: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AMF_RESULT,
-    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
+    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AmfResult,
+    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AmfResult,
+    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
+    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AmfResult,
+    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AmfResult,
+    clear: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AmfResult,
+    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
     get_memory_type: unsafe extern "C" fn(*mut c_void) -> i32,
-    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AMF_RESULT,
-    convert: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
-    interop: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
+    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AmfResult,
+    convert: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
+    interop: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
     get_data_type: unsafe extern "C" fn(*mut c_void) -> i32,
     is_reusable: unsafe extern "C" fn(*mut c_void) -> bool,
     set_pts: unsafe extern "C" fn(*mut c_void, i64),
@@ -254,7 +254,7 @@ struct AMFBufferVtbl {
     set_duration: unsafe extern "C" fn(*mut c_void, i64),
     get_duration: unsafe extern "C" fn(*mut c_void) -> i64,
     // Buffer-specific
-    set_size: unsafe extern "C" fn(*mut c_void, usize) -> AMF_RESULT,
+    set_size: unsafe extern "C" fn(*mut c_void, usize) -> AmfResult,
     get_size: unsafe extern "C" fn(*mut c_void) -> usize,
     get_native: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
 }
@@ -270,19 +270,19 @@ struct AMFSurfaceVtbl {
     // Inherits from AMFData
     acquire: unsafe extern "C" fn(*mut c_void) -> i64,
     release: unsafe extern "C" fn(*mut c_void) -> i64,
-    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AMF_RESULT,
-    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AMF_RESULT,
-    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AMF_RESULT,
-    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AMF_RESULT,
-    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AMF_RESULT,
-    clear: unsafe extern "C" fn(*mut c_void) -> AMF_RESULT,
-    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AMF_RESULT,
-    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
-    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AMF_RESULT,
+    get_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut c_void) -> AmfResult,
+    set_property: unsafe extern "C" fn(*mut c_void, *const u16, *const c_void) -> AmfResult,
+    has_property: unsafe extern "C" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
+    get_property_count: unsafe extern "C" fn(*mut c_void, *mut usize) -> AmfResult,
+    get_property_at: unsafe extern "C" fn(*mut c_void, usize, *mut u16, usize, *mut c_void) -> AmfResult,
+    clear: unsafe extern "C" fn(*mut c_void) -> AmfResult,
+    copy_to: unsafe extern "C" fn(*mut c_void, *mut c_void, bool) -> AmfResult,
+    add_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
+    remove_observer: unsafe extern "C" fn(*mut c_void, *mut c_void) -> AmfResult,
     get_memory_type: unsafe extern "C" fn(*mut c_void) -> i32,
-    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AMF_RESULT,
-    convert: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
-    interop: unsafe extern "C" fn(*mut c_void, i32) -> AMF_RESULT,
+    duplicate: unsafe extern "C" fn(*mut c_void, i32, *mut AMFData) -> AmfResult,
+    convert: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
+    interop: unsafe extern "C" fn(*mut c_void, i32) -> AmfResult,
     get_data_type: unsafe extern "C" fn(*mut c_void) -> i32,
     is_reusable: unsafe extern "C" fn(*mut c_void) -> bool,
     set_pts: unsafe extern "C" fn(*mut c_void, i64),
@@ -294,7 +294,7 @@ struct AMFSurfaceVtbl {
     get_planes_count: unsafe extern "C" fn(*mut c_void) -> usize,
     get_plane_at: unsafe extern "C" fn(*mut c_void, usize) -> AMFPlane,
     get_plane: unsafe extern "C" fn(*mut c_void, i32) -> AMFPlane,
-    set_crop: unsafe extern "C" fn(*mut c_void, i32, i32, i32, i32) -> AMF_RESULT,
+    set_crop: unsafe extern "C" fn(*mut c_void, i32, i32, i32, i32) -> AmfResult,
 }
 
 #[repr(C)]
@@ -329,8 +329,8 @@ struct AMFPlaneObj {
 #[cfg(target_os = "windows")]
 const AMF_DLL: &str = "amfrt64.dll";
 
-type AMFQueryVersionFn = unsafe extern "C" fn(*mut u64) -> AMF_RESULT;
-type AMFInitFn = unsafe extern "C" fn(u64, *mut *mut c_void) -> AMF_RESULT;
+type AMFQueryVersionFn = unsafe extern "C" fn(*mut u64) -> AmfResult;
+type AMFInitFn = unsafe extern "C" fn(u64, *mut *mut c_void) -> AmfResult;
 
 struct AmfLibrary {
     _lib: libloading::Library,

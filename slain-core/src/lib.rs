@@ -26,6 +26,7 @@ pub mod amf_encoder;
 pub mod vaapi_decode;
 pub mod hw_decode;
 pub mod decode;
+pub mod h264_utils;
 
 // ============================================================================
 // Container Demuxers
@@ -35,6 +36,12 @@ pub mod avi_demux;
 pub mod ts_demux;
 pub mod mp4_demux;
 pub mod lav;  // LAV Filters replacement (splitter + decoders)
+
+// ============================================================================
+// DirectShow Integration (Windows)
+// ============================================================================
+#[cfg(windows)]
+pub mod dshow;  // LAV Filters via DirectShow COM
 
 // ============================================================================
 // Media Processing

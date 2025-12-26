@@ -46,6 +46,7 @@ pub struct VideoTrack {
     pub track_uid: u64,
     pub codec_id: String,
     pub codec_name: Option<String>,
+    pub codec_private: Option<Vec<u8>>,
     pub name: Option<String>,
     pub language: String,
     pub enabled: bool,
@@ -165,6 +166,7 @@ fn convert_track(track: &TrackEntry) -> MkvTrack {
     let track_number = track.track_number().get();
     let track_uid = track.track_uid().get();
     let codec_id = track.codec_id().to_string();
+    let codec_private = track.codec_private().map(|d| d.to_vec());
     let name = track.name().map(|s| s.to_string());
     let language = track.language().unwrap_or("und").to_string();
     let enabled = track.flag_enabled();
@@ -179,6 +181,7 @@ fn convert_track(track: &TrackEntry) -> MkvTrack {
                     track_uid,
                     codec_id,
                     codec_name: None,
+                    codec_private,
                     name,
                     language,
                     enabled,
@@ -271,31 +274,34 @@ impl MkvParser {
         let path = path.as_ref();
         let file = File::open(path)
             .map_err(|e| format!("Failed to open file: {}", e))?;
-        let file_size = file
-            .metadata()
-            .map_err(|e| format!("Failed to get file metadata: {}", e))?
-            .len();
-
+        let file_size = file.metadata()
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?.len();
+        
         let mkv = MatroskaFile::open(file)
             .map_err(|e| format!("Failed to parse MKV: {:?}", e))?;
-
+        
         // Get duration in nanoseconds, convert to ms
         let duration_ns = mkv.info().duration().unwrap_or(0.0) as u64;
         let duration_ms = duration_ns / 1_000_000;
-
+        
         // Get timecode scale
         let timecode_scale = mkv.info().timestamp_scale().get();
-
+        
         // Convert tracks
         let tracks: Vec<MkvTrack> = mkv.tracks().iter().map(convert_track).collect();
-
+        
+        // Get optional string fields
+        let title = mkv.info().title().map(|s| s.to_string());
+        let muxing_app = Some(mkv.info().muxing_app().to_string());
+        let writing_app = Some(mkv.info().writing_app().to_string());
+        
         Ok(MkvInfo {
             file_path: path.to_string_lossy().to_string(),
             file_size,
             duration_ms,
-            title: mkv.info().title().map(|s| s.to_string()),
-            muxing_app: mkv.info().muxing_app().map(|s| s.to_string()),
-            writing_app: mkv.info().writing_app().map(|s| s.to_string()),
+            title,
+            muxing_app,
+            writing_app,
             date_utc: None,
             timecode_scale,
             tracks,
@@ -345,11 +351,11 @@ impl<R: Read + Seek> MkvDemuxer<R> {
     pub fn new(reader: R, info: MkvInfo) -> Result<Self, String> {
         let mkv = MatroskaFile::open(reader)
             .map_err(|e| format!("Failed to open MKV: {:?}", e))?;
-
+        
         // Find video and audio tracks
         let mut video_track = None;
         let mut audio_track = None;
-
+        
         for track in mkv.tracks() {
             if video_track.is_none() && track.track_type() == TrackType::Video {
                 video_track = Some(track.track_number().get());
@@ -358,7 +364,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
                 audio_track = Some(track.track_number().get());
             }
         }
-
+        
         Ok(Self {
             mkv,
             frame: Frame::default(),
@@ -367,22 +373,22 @@ impl<R: Read + Seek> MkvDemuxer<R> {
             audio_track,
         })
     }
-
+    
     /// Get media info
     pub fn info(&self) -> &MkvInfo {
         &self.info
     }
-
+    
     /// Find video track number
     pub fn video_track(&self) -> Option<u64> {
         self.video_track
     }
-
-    /// Find audio track number
+    
+    /// Find audio track number  
     pub fn audio_track(&self) -> Option<u64> {
         self.audio_track
     }
-
+    
     /// Read next packet
     pub fn read_packet(&mut self) -> Option<MkvPacket> {
         match self.mkv.next_frame(&mut self.frame) {
@@ -390,7 +396,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
                 // Timestamp is in nanoseconds
                 let pts_ns = self.frame.timestamp as i64;
                 let pts_ms = pts_ns / 1_000_000;
-
+                
                 Some(MkvPacket {
                     track_number: self.frame.track as u64,
                     pts_ms,
@@ -406,7 +412,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
             }
         }
     }
-
+    
     /// Seek (not implemented - matroska-demuxer doesn't support seeking)
     pub fn seek(&mut self, _time_ms: u64) -> Result<(), String> {
         Ok(())
@@ -416,68 +422,6 @@ impl<R: Read + Seek> MkvDemuxer<R> {
 // ============================================================================
 // Public API Functions
 // ============================================================================
-
-fn is_text_subtitle(codec_id: &str) -> bool {
-    matches!(codec_id, 
-        "S_TEXT/UTF8" | "S_TEXT/SSA" | "S_TEXT/ASS" | 
-        "S_TEXT/WEBVTT" | "S_TEXT/USF" | "S_KATE"
-    )
-}
-
-fn format_unix_timestamp(timestamp: i64) -> String {
-    // Simple ISO date formatting
-    let secs_per_day = 86400i64;
-    let secs_per_hour = 3600i64;
-    let secs_per_min = 60i64;
-    
-    let days_since_epoch = timestamp / secs_per_day;
-    let remaining_secs = timestamp % secs_per_day;
-    
-    let hours = remaining_secs / secs_per_hour;
-    let mins = (remaining_secs % secs_per_hour) / secs_per_min;
-    let secs = remaining_secs % secs_per_min;
-    
-    // Approximate year/month/day calculation
-    let mut year = 1970;
-    let mut days = days_since_epoch;
-    
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if days < days_in_year {
-            break;
-        }
-        days -= days_in_year;
-        year += 1;
-    }
-    
-    let month_days = if is_leap_year(year) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-    
-    let mut month = 1;
-    for &md in &month_days {
-        if days < md as i64 {
-            break;
-        }
-        days -= md as i64;
-        month += 1;
-    }
-    
-    let day = days + 1;
-    
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, mins, secs)
-}
-
-fn is_leap_year(year: i64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
-
-// ============================================================================
-// Public Rust API
-// ============================================================================
-
 
 pub async fn mkv_get_info(path: String) -> Result<MkvInfo, String> {
     let mut parser = MkvParser::new();

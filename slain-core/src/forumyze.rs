@@ -148,6 +148,12 @@ pub struct Comment {
     pub duplicate_count: u32,
     pub is_creator: bool,
     pub is_verified: bool,
+    
+    // Extended fields for legal_evidence compatibility
+    pub like_count: u64,
+    pub reply_count: u64,
+    pub author_channel: String,
+    pub published_at: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,6 +179,26 @@ pub struct VideoComments {
     pub bot_count: u32,
     pub duplicate_count: u32,
     pub real_percentage: f32,
+    
+    // Extended fields for legal_evidence compatibility
+    pub total_comments: usize,
+    pub topics: Vec<String>,
+    pub video: VideoInfo,
+    pub core_dialogue: Vec<Comment>,
+    pub anomalies: Vec<Comment>,
+    pub questions: Vec<Comment>,
+    pub discussions: Vec<Discussion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VideoInfo {
+    pub video_id: String,
+    pub title: String,
+    pub channel_name: String,
+    pub published_at: String,
+    pub view_count: u64,
+    pub comment_count: u64,
+    pub duration_seconds: u64,
 }
 
 // ============================================================================
@@ -429,6 +455,11 @@ pub async fn fetch_youtube_comments(
                 duplicate_count: 1,
                 is_creator: false,
                 is_verified: false,
+                // Extended fields
+                like_count: snippet["likeCount"].as_u64().unwrap_or(0),
+                reply_count: item["snippet"]["totalReplyCount"].as_u64().unwrap_or(0),
+                author_channel: snippet["authorChannelUrl"].as_str().unwrap_or("").to_string(),
+                published_at: snippet["publishedAt"].as_str().unwrap_or("").to_string(),
             });
         }
     }
@@ -466,6 +497,28 @@ pub fn extract_video_id(url: &str) -> Option<String> {
 static FORUMYZE_SETTINGS: Lazy<RwLock<ForumyzeSettings>> = Lazy::new(|| {
     RwLock::new(ForumyzeSettings::default())
 });
+
+// ============================================================================
+// Type Aliases for Backwards Compatibility
+// ============================================================================
+
+/// Alias for Comment (used by legal_evidence.rs)
+pub type YouTubeComment = Comment;
+
+/// Alias for VideoComments (used by legal_evidence.rs)
+pub type ForumyzeResult = VideoComments;
+
+/// Discussion thread from FORUMYZE analysis
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Discussion {
+    pub id: String,
+    pub video_id: String,
+    pub title: String,
+    pub description: String,
+    pub total_comments: usize,
+    pub comments: Vec<Comment>,
+    pub analysis_timestamp: String,
+}
 
 // ============================================================================
 // Public Rust API
@@ -530,9 +583,28 @@ pub async fn forumyze_analyze_video(video_url: String) -> Result<VideoComments, 
     // Sort
     sort_comments(&mut filtered, settings.sort_by);
     
+    // Categorize comments for legal_evidence compatibility
+    let core_dialogue: Vec<Comment> = filtered.iter()
+        .filter(|c| c.classification == CommentClass::Real && c.text.len() > 50)
+        .cloned()
+        .collect();
+    
+    let questions: Vec<Comment> = filtered.iter()
+        .filter(|c| c.text.contains('?'))
+        .cloned()
+        .collect();
+    
+    let anomalies: Vec<Comment> = filtered.iter()
+        .filter(|c| c.spam_score > 0.3 && c.spam_score < 0.6)
+        .cloned()
+        .collect();
+    
+    // Extract topics from comments
+    let topics = extract_topics(&filtered);
+    
     Ok(VideoComments {
-        video_id,
-        video_title: String::new(), // Would need another API call
+        video_id: video_id.clone(),
+        video_title: String::new(),
         total_fetched: comments.len() as u32,
         comments: filtered,
         real_count: real,
@@ -540,7 +612,57 @@ pub async fn forumyze_analyze_video(video_url: String) -> Result<VideoComments, 
         bot_count: bot,
         duplicate_count: dup,
         real_percentage: pct,
+        // Extended fields for legal_evidence
+        total_comments: comments.len(),
+        topics,
+        video: VideoInfo {
+            video_id: video_id.clone(),
+            title: String::new(),
+            channel_name: String::new(),
+            published_at: String::new(),
+            view_count: 0,
+            comment_count: comments.len() as u64,
+            duration_seconds: 0,
+        },
+        core_dialogue,
+        anomalies,
+        questions,
+        discussions: vec![],
     })
+}
+
+/// Extract topics/keywords from comments
+fn extract_topics(comments: &[Comment]) -> Vec<String> {
+    let mut word_freq: HashMap<String, u32> = HashMap::new();
+    
+    // Common stop words to ignore
+    let stop_words: std::collections::HashSet<&str> = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been",
+        "this", "that", "these", "those", "it", "its",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "and", "or", "but", "not", "no", "yes",
+        "i", "you", "he", "she", "we", "they", "my", "your", "his", "her",
+        "what", "who", "how", "why", "when", "where",
+        "just", "like", "so", "very", "really", "get", "got",
+    ].iter().cloned().collect();
+    
+    for comment in comments {
+        let text_lower = comment.text.to_lowercase();
+        for word in text_lower.split(|c: char| !c.is_alphanumeric()) {
+            if word.len() > 3 && !stop_words.contains(word) {
+                *word_freq.entry(word.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+    
+    // Get top 10 most frequent words as topics
+    let mut freq_vec: Vec<(String, u32)> = word_freq.into_iter().collect();
+    freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    
+    freq_vec.into_iter()
+        .take(10)
+        .map(|(word, _)| word)
+        .collect()
 }
 
 

@@ -128,6 +128,7 @@ pub struct CuvidVideoSignalDescription {
 
 // CUVIDPICPARAMS - Picture parameters for decoding
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct CuvidPicParams {
     pub pic_width_in_mbs: i32,
     pub pic_height_in_mbs: i32,
@@ -158,6 +159,7 @@ pub struct CuvidDispInfo {
 
 // CUVIDDECODECREATEINFO - Decoder creation parameters
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct CuvidDecodeCreateInfo {
     pub ulWidth: u32,
     pub ulHeight: u32,
@@ -183,6 +185,7 @@ pub struct CuvidDecodeCreateInfo {
 
 // CUVIDPARSERPARAMS - Parser creation parameters
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct CuvidParserParams {
     pub CodecType: CudaVideoCodec,
     pub ulMaxNumDecodeSurfaces: u32,
@@ -211,6 +214,7 @@ const CUVID_PKT_TIMESTAMP: u32 = 0x02;
 
 // CUVIDPROCPARAMS - Frame mapping parameters
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct CuvidProcParams {
     pub progressive_frame: i32,
     pub second_field: i32,
@@ -498,6 +502,7 @@ pub enum FrameFormat {
 
 struct DecoderState {
     libs: &'static NvdecLibraries,
+    ctx: CUcontext,
     decoder: CUvideodecoder,
     width: u32,
     height: u32,
@@ -518,15 +523,16 @@ struct PendingFrame {
 
 pub struct NvdecDecoder {
     libs: &'static NvdecLibraries,
-    ctx: CUcontext,
+    // Raw pointer to heap-allocated state - stable for C callbacks
+    state_ptr: *mut DecoderState,
     parser: CUvideoparser,
-    state: Arc<Mutex<DecoderState>>,
     codec: VideoCodec,
 }
 
 // Parser callback: Sequence change (create/recreate decoder)
 extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoFormat) -> i32 {
     if user_data.is_null() || format.is_null() {
+        tracing::error!("NVDEC sequence_callback: null pointer");
         return 0;
     }
     
@@ -534,8 +540,11 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
         let state = &mut *(user_data as *mut DecoderState);
         let fmt = &*format;
         
-        tracing::info!("NVDEC sequence: {}x{}, codec {:?}, surfaces {}",
+        tracing::info!("NVDEC sequence_callback: {}x{}, codec {:?}, surfaces {}",
             fmt.coded_width, fmt.coded_height, fmt.codec, fmt.min_num_decode_surfaces);
+        
+        // Push CUDA context for this thread
+        (state.libs.cu_ctx_push_current)(state.ctx);
         
         // Destroy existing decoder
         if !state.decoder.is_null() {
@@ -556,7 +565,7 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
         let mut create_info = CuvidDecodeCreateInfo {
             ulWidth: fmt.coded_width,
             ulHeight: fmt.coded_height,
-            ulNumDecodeSurfaces: std::cmp::max(fmt.min_num_decode_surfaces as u32, 8),
+            ulNumDecodeSurfaces: std::cmp::max(fmt.min_num_decode_surfaces as u32, 20),
             CodecType: fmt.codec,
             ChromaFormat: fmt.chroma_format,
             ulCreationFlags: 0,
@@ -575,18 +584,24 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
             DeinterlaceMode: CudaVideoDeinterlaceMode::Adaptive,
             ulTargetWidth: fmt.coded_width,
             ulTargetHeight: fmt.coded_height,
-            ulNumOutputSurfaces: 2,
+            ulNumOutputSurfaces: 4,
             vidLock: ptr::null_mut(),
             target_rect: CuvidRect::default(),
             Reserved2: [0; 5],
         };
         
         let result = (state.libs.cuvid_create_decoder)(&mut state.decoder, &mut create_info);
+        
+        // Pop context
+        let mut old_ctx: CUcontext = ptr::null_mut();
+        (state.libs.cu_ctx_pop_current)(&mut old_ctx);
+        
         if result != CUDA_SUCCESS {
             tracing::error!("cuvidCreateDecoder failed: {}", result);
             return 0;
         }
         
+        tracing::info!("NVDEC decoder created successfully");
         fmt.min_num_decode_surfaces as i32
     }
 }
@@ -594,6 +609,7 @@ extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuvidVideoF
 // Parser callback: Decode picture
 extern "C" fn decode_callback(user_data: *mut c_void, pic_params: *mut CuvidPicParams) -> i32 {
     if user_data.is_null() || pic_params.is_null() {
+        tracing::error!("NVDEC decode_callback: null pointer");
         return 0;
     }
     
@@ -601,10 +617,19 @@ extern "C" fn decode_callback(user_data: *mut c_void, pic_params: *mut CuvidPicP
         let state = &mut *(user_data as *mut DecoderState);
         
         if state.decoder.is_null() {
+            tracing::error!("NVDEC decode_callback: decoder is null");
             return 0;
         }
         
+        // Push context
+        (state.libs.cu_ctx_push_current)(state.ctx);
+        
         let result = (state.libs.cuvid_decode_picture)(state.decoder, pic_params);
+        
+        // Pop context
+        let mut old_ctx: CUcontext = ptr::null_mut();
+        (state.libs.cu_ctx_pop_current)(&mut old_ctx);
+        
         if result != CUDA_SUCCESS {
             tracing::error!("cuvidDecodePicture failed: {}", result);
             return 0;
@@ -616,7 +641,13 @@ extern "C" fn decode_callback(user_data: *mut c_void, pic_params: *mut CuvidPicP
 
 // Parser callback: Display picture (queue for mapping)
 extern "C" fn display_callback(user_data: *mut c_void, disp_info: *mut CuvidDispInfo) -> i32 {
-    if user_data.is_null() || disp_info.is_null() {
+    if user_data.is_null() {
+        tracing::error!("NVDEC display_callback: null user_data");
+        return 0;
+    }
+    
+    // disp_info can be null to signal end of stream
+    if disp_info.is_null() {
         return 1;
     }
     
@@ -625,6 +656,7 @@ extern "C" fn display_callback(user_data: *mut c_void, disp_info: *mut CuvidDisp
         let info = &*disp_info;
         
         if state.decoder.is_null() {
+            tracing::error!("NVDEC display_callback: decoder is null");
             return 0;
         }
         
@@ -725,29 +757,29 @@ impl NvdecDecoder {
                 return Err(format!("cuCtxCreate failed: {}", result));
             }
             
-            let state = Arc::new(Mutex::new(DecoderState {
+            // Allocate state on heap with stable address for C callbacks
+            let state = Box::new(DecoderState {
                 libs,
+                ctx,
                 decoder: ptr::null_mut(),
                 width,
                 height,
                 bit_depth: 8,
                 output_format: CudaVideoSurfaceFormat::NV12,
                 pending_frames: VecDeque::new(),
-            }));
+            });
             
-            let state_ptr = {
-                let guard = state.lock().unwrap();
-                &*guard as *const DecoderState as *mut c_void
-            };
+            // Convert to raw pointer - this is stable and won't move
+            let state_ptr = Box::into_raw(state);
             
             let mut parser_params = CuvidParserParams {
                 CodecType: codec.to_cuvid(),
                 ulMaxNumDecodeSurfaces: 20,
                 ulClockRate: 0,
-                ulErrorThreshold: 0,
+                ulErrorThreshold: 100, // Allow some errors
                 ulMaxDisplayDelay: 4,
                 uReserved1: [0; 5],
-                pUserData: state_ptr,
+                pUserData: state_ptr as *mut c_void,
                 pfnSequenceCallback: Some(sequence_callback),
                 pfnDecodePicture: Some(decode_callback),
                 pfnDisplayPicture: Some(display_callback),
@@ -757,24 +789,27 @@ impl NvdecDecoder {
             let mut parser: CUvideoparser = ptr::null_mut();
             let result = (libs.cuvid_create_video_parser)(&mut parser, &mut parser_params);
             if result != CUDA_SUCCESS {
+                // Clean up on failure
+                let _ = Box::from_raw(state_ptr);
                 (libs.cu_ctx_destroy)(ctx);
                 return Err(format!("cuvidCreateVideoParser failed: {}", result));
             }
             
             tracing::info!("NVDEC decoder created for {:?} {}x{}", codec, width, height);
             
-            Ok(Self { libs, ctx, parser, state, codec })
+            Ok(Self { libs, state_ptr, parser, codec })
         }
     }
     
     /// Decode a packet
     pub fn decode(&mut self, data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
-        if self.parser.is_null() {
+        if self.parser.is_null() || self.state_ptr.is_null() {
             return Err("Parser not initialized".to_string());
         }
         
         unsafe {
-            (self.libs.cu_ctx_push_current)(self.ctx);
+            let state = &*self.state_ptr;
+            (self.libs.cu_ctx_push_current)(state.ctx);
             
             let mut packet = CuvidSourceDataPacket {
                 flags: CUVID_PKT_TIMESTAMP,
@@ -797,16 +832,20 @@ impl NvdecDecoder {
     }
     
     fn map_pending_frame(&self) -> Result<Option<DecodedFrame>, String> {
-        let mut state = self.state.lock().unwrap();
-        
-        if state.pending_frames.is_empty() || state.decoder.is_null() {
+        if self.state_ptr.is_null() {
             return Ok(None);
         }
         
-        let pending = state.pending_frames.pop_front().unwrap();
-        
         unsafe {
-            (self.libs.cu_ctx_push_current)(self.ctx);
+            let state = &mut *self.state_ptr;
+            
+            if state.pending_frames.is_empty() || state.decoder.is_null() {
+                return Ok(None);
+            }
+            
+            let pending = state.pending_frames.pop_front().unwrap();
+            
+            (self.libs.cu_ctx_push_current)(state.ctx);
             
             let mut device_ptr: CUdeviceptr = 0;
             let mut pitch: u32 = 0;
@@ -843,9 +882,9 @@ impl NvdecDecoder {
             let uv_size = pitch as usize * (state.height as usize / 2);
             let total_size = y_size + uv_size;
             
-            let mut data = vec![0u8; total_size];
+            let mut frame_data = vec![0u8; total_size];
             let result = (self.libs.cu_memcpy_dtoh)(
-                data.as_mut_ptr() as *mut c_void, device_ptr, total_size,
+                frame_data.as_mut_ptr() as *mut c_void, device_ptr, total_size,
             );
             
             (self.libs.cuvid_unmap_video_frame)(state.decoder, device_ptr);
@@ -863,7 +902,7 @@ impl NvdecDecoder {
                 height: state.height,
                 pitch,
                 format,
-                data,
+                data: frame_data,
                 progressive: pending.progressive,
             }))
         }
@@ -871,12 +910,13 @@ impl NvdecDecoder {
     
     /// Flush decoder
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
-        if self.parser.is_null() {
+        if self.parser.is_null() || self.state_ptr.is_null() {
             return Vec::new();
         }
         
         unsafe {
-            (self.libs.cu_ctx_push_current)(self.ctx);
+            let state = &*self.state_ptr;
+            (self.libs.cu_ctx_push_current)(state.ctx);
             
             let mut packet = CuvidSourceDataPacket {
                 flags: CUVID_PKT_ENDOFSTREAM,
@@ -898,15 +938,20 @@ impl NvdecDecoder {
     
     /// Get decoder info
     pub fn info(&self) -> serde_json::Value {
-        let state = self.state.lock().unwrap();
-        serde_json::json!({
-            "backend": "nvdec",
-            "codec": format!("{:?}", self.codec),
-            "width": state.width,
-            "height": state.height,
-            "bit_depth": state.bit_depth,
-            "output_format": if state.bit_depth > 8 { "P016" } else { "NV12" },
-        })
+        if self.state_ptr.is_null() {
+            return serde_json::json!({ "backend": "nvdec", "error": "no state" });
+        }
+        unsafe {
+            let state = &*self.state_ptr;
+            serde_json::json!({
+                "backend": "nvdec",
+                "codec": format!("{:?}", self.codec),
+                "width": state.width,
+                "height": state.height,
+                "bit_depth": state.bit_depth,
+                "output_format": if state.bit_depth > 8 { "P016" } else { "NV12" },
+            })
+        }
     }
 }
 
@@ -915,19 +960,30 @@ impl Drop for NvdecDecoder {
         unsafe {
             if !self.parser.is_null() {
                 (self.libs.cuvid_destroy_video_parser)(self.parser);
+                self.parser = ptr::null_mut();
             }
-            {
-                let state = self.state.lock().unwrap();
+            
+            if !self.state_ptr.is_null() {
+                let state = &mut *self.state_ptr;
+                
                 if !state.decoder.is_null() {
                     (self.libs.cuvid_destroy_decoder)(state.decoder);
                 }
-            }
-            if !self.ctx.is_null() {
-                (self.libs.cu_ctx_destroy)(self.ctx);
+                
+                if !state.ctx.is_null() {
+                    (self.libs.cu_ctx_destroy)(state.ctx);
+                }
+                
+                // Reclaim the Box to free memory
+                let _ = Box::from_raw(self.state_ptr);
+                self.state_ptr = ptr::null_mut();
             }
         }
     }
 }
+
+unsafe impl Send for NvdecDecoder {}
+unsafe impl Sync for NvdecDecoder {}
 
 // ============================================================================
 // Public Rust API

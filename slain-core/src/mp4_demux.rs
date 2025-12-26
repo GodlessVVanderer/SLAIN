@@ -256,7 +256,7 @@ pub mod mp4 {
     }
 
     impl<R: Read + Seek> Mp4Demuxer<R> {
-        pub fn new(mut reader: R) -> Result<Self, String> {
+        pub fn new(reader: R) -> Result<Self, String> {
             let mut demuxer = Self {
                 reader,
                 duration: 0,
@@ -868,9 +868,7 @@ pub mod mp4 {
             }
 
             // Find which chunk this sample is in
-            let mut chunk = 0usize;
             let mut sample = 0usize;
-            let mut samples_per_chunk = stsc[0].1 as usize;
 
             for i in 0..stsc.len() {
                 let first_chunk = (stsc[i].0 - 1) as usize;
@@ -884,29 +882,21 @@ pub mod mp4 {
 
                 for c in first_chunk..next_first_chunk {
                     if sample + spc > sample_idx {
-                        chunk = c;
-                        samples_per_chunk = spc;
-                        break;
+                        // Calculate offset within chunk
+                        let chunk_offset = *stco.get(c)?;
+                        let sample_in_chunk = sample_idx - sample;
+                        
+                        let mut offset = chunk_offset;
+                        for j in 0..sample_in_chunk {
+                            offset += *stsz.get(sample + j)? as u64;
+                        }
+                        return Some(offset);
                     }
                     sample += spc;
-                    chunk = c + 1;
-                }
-
-                if sample + spc > sample_idx {
-                    break;
                 }
             }
 
-            // Calculate offset within chunk
-            let chunk_offset = *stco.get(chunk)?;
-            let sample_in_chunk = sample_idx - sample;
-            
-            let mut offset = chunk_offset;
-            for i in 0..sample_in_chunk {
-                offset += *stsz.get(sample + i)? as u64;
-            }
-
-            Some(offset)
+            None
         }
 
         /// Seek to specific timestamp (microseconds)

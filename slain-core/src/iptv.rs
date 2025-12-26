@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use regex::Regex;
 use std::collections::HashMap;
+use chrono::TimeZone;
 
 // ============================================================================
 // Channel Types
@@ -259,7 +260,7 @@ fn parse_xmltv_time(raw: &str) -> Result<i64, String> {
         .ok_or("Invalid date")?
         .and_hms_opt(hour, minute, second)
         .ok_or("Invalid time")?;
-    Ok(chrono::DateTime::<chrono::Utc>::from_utc(dt, chrono::Utc).timestamp())
+    Ok(chrono::Utc.from_utc_datetime(&dt).timestamp())
 }
 
 /// Get current program for a channel
@@ -366,7 +367,7 @@ impl IptvManager {
     
     /// Get all groups
     pub fn get_all_groups(&self) -> Vec<String> {
-        let mut groups: std::collections::HashSet<_> = self.playlists.iter()
+        let groups: std::collections::HashSet<_> = self.playlists.iter()
             .flat_map(|p| p.groups.iter().cloned())
             .collect();
         

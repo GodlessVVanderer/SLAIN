@@ -574,15 +574,16 @@ impl RtmpStreamer {
         };
         
         let rtmp_url = format!("{}/{}", self.config.server_url, self.config.stream_key);
+        let fps_str = self.config.fps.to_string();
         
         #[cfg(target_os = "windows")]
-        let capture_args = vec!["-f", "gdigrab", "-framerate", &self.config.fps.to_string(), "-i", "desktop"];
+        let capture_args = vec!["-f", "gdigrab", "-framerate", &fps_str, "-i", "desktop"];
         
         #[cfg(target_os = "linux")]
-        let capture_args = vec!["-f", "x11grab", "-framerate", &self.config.fps.to_string(), "-i", ":0.0"];
+        let capture_args = vec!["-f", "x11grab", "-framerate", &fps_str, "-i", ":0.0"];
         
         #[cfg(target_os = "macos")]
-        let capture_args = vec!["-f", "avfoundation", "-framerate", &self.config.fps.to_string(), "-i", "1:0"];
+        let capture_args = vec!["-f", "avfoundation", "-framerate", &fps_str, "-i", "1:0"];
         
         let bitrate_str = format!("{}k", self.config.bitrate_kbps);
         let audio_bitrate_str = format!("{}k", self.config.audio_bitrate);
@@ -836,7 +837,7 @@ pub async fn stop_rtmp_stream() -> Result<(), String> {
 
 pub async fn start_local_server(port: u16) -> Result<String, String> {
     // Default to a sample path - in real usage, this would be passed in
-    let mut server = LocalStreamServer::new(port);
+    let server = LocalStreamServer::new(port);
     
     let local_ip = local_ip_address::local_ip()
         .map_err(|e| format!("Failed to get local IP: {}", e))?;

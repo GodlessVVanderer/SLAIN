@@ -432,17 +432,18 @@ pub fn extract_tar<P: AsRef<Path>>(
     for entry in archive.entries().map_err(|e| format!("Failed to read TAR: {}", e))? {
         let mut entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         
-        let path = entry.path()
-            .map_err(|e| format!("Failed to read path: {}", e))?;
+        let entry_path = entry.path()
+            .map_err(|e| format!("Failed to read path: {}", e))?
+            .to_path_buf();
         
         // Filter entries if specified
         if let Some(ref filter) = entries {
-            if !filter.contains(&path.to_string_lossy().to_string()) {
+            if !filter.contains(&entry_path.to_string_lossy().to_string()) {
                 continue;
             }
         }
         
-        let out_path = output_dir.join(&path);
+        let out_path = output_dir.join(&entry_path);
         
         // Security: prevent path traversal
         if !out_path.starts_with(output_dir) {
@@ -450,7 +451,7 @@ pub fn extract_tar<P: AsRef<Path>>(
         }
         
         entry.unpack(&out_path)
-            .map_err(|e| format!("Failed to extract {}: {}", path.display(), e))?;
+            .map_err(|e| format!("Failed to extract {}: {}", entry_path.display(), e))?;
         
         extracted.push(out_path.to_string_lossy().to_string());
     }

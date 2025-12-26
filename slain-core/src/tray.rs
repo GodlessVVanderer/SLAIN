@@ -337,7 +337,6 @@ pub fn handle_tray_event(app: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => {
             handle_menu_click(app, &id);
         }
-        _ => {}
     }
 }
 

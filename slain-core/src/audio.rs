@@ -21,7 +21,7 @@ use symphonia::core::units::Time;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
-use ringbuf::HeapRb;
+use ringbuf::{HeapRb, traits::{Split, Consumer, Producer, Observer}};
 use serde::{Deserialize, Serialize};
 
 
@@ -450,9 +450,10 @@ fn decode_audio_to_buffer(
         .make(&track.codec_params, &dec_opts)
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
     
-    let spec = *decoder.codec_params().channels.as_ref()
-        .ok_or("No channel info")?;
-    let channels = spec.count();
+    // Default to stereo if channel info is missing
+    let channels = decoder.codec_params().channels
+        .map(|c| c.count())
+        .unwrap_or(2);
     
     // Decode loop
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
@@ -631,7 +632,15 @@ pub async fn audio_stop() -> Result<(), String> {
 }
 
 
-pub async fn audio_set_volume(volume: f32) -> Result<(), String> {
+pub async fn audio_set_volume_async(volume: f32) -> Result<(), String> {
+    AUDIO_PLAYER.with(|player| {
+        player.borrow_mut().set_volume(volume);
+    });
+    Ok(())
+}
+
+/// Sync wrapper for audio_set_volume
+pub fn audio_set_volume(volume: f32) -> Result<(), String> {
     AUDIO_PLAYER.with(|player| {
         player.borrow_mut().set_volume(volume);
     });
