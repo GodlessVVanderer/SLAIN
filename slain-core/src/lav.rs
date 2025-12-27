@@ -29,14 +29,14 @@
 //! └───────┘ └───────┘
 //! ```
 
-use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom, BufReader};
-use std::fs::File;
-use std::path::Path;
-use std::sync::Arc;
+use openh264::formats::YUVSource;
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-use openh264::formats::YUVSource;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::Path;
+use std::sync::Arc;
 
 // ============================================================================
 // Error Types
@@ -166,7 +166,8 @@ impl ContainerFormat {
         }
 
         // Raw H.264: NAL start code
-        if header.starts_with(&[0x00, 0x00, 0x00, 0x01]) || header.starts_with(&[0x00, 0x00, 0x01]) {
+        if header.starts_with(&[0x00, 0x00, 0x00, 0x01]) || header.starts_with(&[0x00, 0x00, 0x01])
+        {
             // Could be H.264 or HEVC - check NAL type
             let nal_start = if header[2] == 0x01 { 3 } else { 4 };
             if header.len() > nal_start {
@@ -258,7 +259,10 @@ impl VideoCodec {
 
     /// Check if hardware decoding is typically available
     pub fn hw_decode_available(&self) -> bool {
-        matches!(self, Self::H264 | Self::H265 | Self::Vp9 | Self::Av1 | Self::Mpeg2 | Self::Vc1)
+        matches!(
+            self,
+            Self::H264 | Self::H265 | Self::Vp9 | Self::Av1 | Self::Mpeg2 | Self::Vc1
+        )
     }
 }
 
@@ -324,7 +328,10 @@ impl AudioCodec {
 
     /// Can be bitstreamed to receiver
     pub fn can_bitstream(&self) -> bool {
-        matches!(self, Self::Ac3 | Self::Eac3 | Self::Dts | Self::DtsHd | Self::TrueHd)
+        matches!(
+            self,
+            Self::Ac3 | Self::Eac3 | Self::Dts | Self::DtsHd | Self::TrueHd
+        )
     }
 }
 
@@ -445,21 +452,21 @@ impl Default for ColorSpace {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HdrMetadata {
     pub transfer: HdrTransfer,
-    pub max_cll: u16,      // Maximum Content Light Level
-    pub max_fall: u16,     // Maximum Frame Average Light Level
+    pub max_cll: u16,  // Maximum Content Light Level
+    pub max_fall: u16, // Maximum Frame Average Light Level
     pub mastering_display: Option<MasteringDisplay>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HdrTransfer {
-    Pq,         // HDR10, Dolby Vision
-    Hlg,        // HLG
-    Sdr,        // Standard Dynamic Range
+    Pq,  // HDR10, Dolby Vision
+    Hlg, // HLG
+    Sdr, // Standard Dynamic Range
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasteringDisplay {
-    pub primaries: [[f32; 2]; 3],  // RGB primaries
+    pub primaries: [[f32; 2]; 3], // RGB primaries
     pub white_point: [f32; 2],
     pub luminance_min: f32,
     pub luminance_max: f32,
@@ -469,12 +476,12 @@ pub struct MasteringDisplay {
 pub enum ChannelLayout {
     Mono,
     Stereo,
-    Surround3_0,    // L R C
-    Quad,           // L R Ls Rs
-    Surround5_0,    // L R C Ls Rs
-    Surround5_1,    // L R C LFE Ls Rs
-    Surround7_1,    // L R C LFE Ls Rs Lb Rb
-    Custom(u32),    // Channel mask
+    Surround3_0, // L R C
+    Quad,        // L R Ls Rs
+    Surround5_0, // L R C Ls Rs
+    Surround5_1, // L R C LFE Ls Rs
+    Surround7_1, // L R C LFE Ls Rs Lb Rb
+    Custom(u32), // Channel mask
 }
 
 impl ChannelLayout {
@@ -682,7 +689,9 @@ impl LavSplitterSource {
 
     /// Read bytes
     pub fn read(&mut self, buf: &mut [u8]) -> LavResult<usize> {
-        let n = self.reader.read(buf)
+        let n = self
+            .reader
+            .read(buf)
             .map_err(|e| LavError::IoError(e.to_string()))?;
         self.position += n as u64;
         Ok(n)
@@ -690,7 +699,8 @@ impl LavSplitterSource {
 
     /// Read exact bytes
     pub fn read_exact(&mut self, buf: &mut [u8]) -> LavResult<()> {
-        self.reader.read_exact(buf)
+        self.reader
+            .read_exact(buf)
             .map_err(|e| LavError::IoError(e.to_string()))?;
         self.position += buf.len() as u64;
         Ok(())
@@ -698,7 +708,8 @@ impl LavSplitterSource {
 
     /// Seek to position
     pub fn seek(&mut self, pos: u64) -> LavResult<()> {
-        self.reader.seek(SeekFrom::Start(pos))
+        self.reader
+            .seek(SeekFrom::Start(pos))
             .map_err(|_| LavError::SeekFailed)?;
         self.position = pos;
         Ok(())
@@ -755,17 +766,23 @@ impl LavSplitter {
         let info = Self::parse_container(&mut source, format)?;
 
         // Select default streams
-        let video_stream = info.video_streams.iter()
+        let video_stream = info
+            .video_streams
+            .iter()
             .find(|s| s.is_default)
             .or_else(|| info.video_streams.first())
             .map(|s| s.index);
 
-        let audio_stream = info.audio_streams.iter()
+        let audio_stream = info
+            .audio_streams
+            .iter()
             .find(|s| s.is_default)
             .or_else(|| info.audio_streams.first())
             .map(|s| s.index);
 
-        let subtitle_stream = info.subtitle_streams.iter()
+        let subtitle_stream = info
+            .subtitle_streams
+            .iter()
             .find(|s| s.is_default)
             .map(|s| s.index);
 
@@ -860,7 +877,10 @@ impl LavSplitter {
     // REAL FORMAT-SPECIFIC IMPLEMENTATIONS
     // ========================================================================
 
-    fn parse_container(source: &mut LavSplitterSource, format: ContainerFormat) -> LavResult<MediaInfo> {
+    fn parse_container(
+        source: &mut LavSplitterSource,
+        format: ContainerFormat,
+    ) -> LavResult<MediaInfo> {
         match format {
             ContainerFormat::Matroska => Self::parse_mkv(source),
             ContainerFormat::Mp4 => Self::parse_mp4(source),
@@ -974,7 +994,11 @@ impl LavSplitter {
         Ok(info)
     }
 
-    fn parse_mkv_tracks(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo) -> LavResult<()> {
+    fn parse_mkv_tracks(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+    ) -> LavResult<()> {
         let mut track_index = 0u32;
 
         while source.position() < end {
@@ -1002,47 +1026,72 @@ impl LavSplitter {
                     let sub_size = Self::read_ebml_size(source)?;
 
                     match sub_id {
-                        0x83 => { // TrackType
+                        0x83 => {
+                            // TrackType
                             track_type = Self::read_ebml_uint(source, sub_size as usize)? as u8;
                         }
-                        0x86 => { // CodecID
+                        0x86 => {
+                            // CodecID
                             codec_id = Self::read_ebml_string(source, sub_size as usize)?;
                         }
-                        0x63A2 => { // CodecPrivate
+                        0x63A2 => {
+                            // CodecPrivate
                             codec_private = vec![0u8; sub_size as usize];
                             source.read_exact(&mut codec_private)?;
                         }
-                        0x22B59C => { // Language
+                        0x22B59C => {
+                            // Language
                             language = Some(Self::read_ebml_string(source, sub_size as usize)?);
                         }
-                        0x536E => { // Name
+                        0x536E => {
+                            // Name
                             name = Some(Self::read_ebml_string(source, sub_size as usize)?);
                         }
-                        0x88 => { // FlagDefault
+                        0x88 => {
+                            // FlagDefault
                             is_default = Self::read_ebml_uint(source, sub_size as usize)? != 0;
                         }
-                        0xE0 => { // Video
+                        0xE0 => {
+                            // Video
                             let video_end = source.position() + sub_size;
                             while source.position() < video_end {
                                 let v_id = Self::read_ebml_id(source)?;
                                 let v_size = Self::read_ebml_size(source)?;
                                 match v_id {
-                                    0xB0 => width = Self::read_ebml_uint(source, v_size as usize)? as u32,
-                                    0xBA => height = Self::read_ebml_uint(source, v_size as usize)? as u32,
-                                    0x2383E3 => frame_rate = Self::read_ebml_float(source, v_size as usize)?,
+                                    0xB0 => {
+                                        width =
+                                            Self::read_ebml_uint(source, v_size as usize)? as u32
+                                    }
+                                    0xBA => {
+                                        height =
+                                            Self::read_ebml_uint(source, v_size as usize)? as u32
+                                    }
+                                    0x2383E3 => {
+                                        frame_rate = Self::read_ebml_float(source, v_size as usize)?
+                                    }
                                     _ => source.seek(source.position() + v_size)?,
                                 }
                             }
                         }
-                        0xE1 => { // Audio
+                        0xE1 => {
+                            // Audio
                             let audio_end = source.position() + sub_size;
                             while source.position() < audio_end {
                                 let a_id = Self::read_ebml_id(source)?;
                                 let a_size = Self::read_ebml_size(source)?;
                                 match a_id {
-                                    0xB5 => sample_rate = Self::read_ebml_float(source, a_size as usize)? as u32,
-                                    0x9F => channels = Self::read_ebml_uint(source, a_size as usize)? as u8,
-                                    0x6264 => bit_depth = Self::read_ebml_uint(source, a_size as usize)? as u8,
+                                    0xB5 => {
+                                        sample_rate =
+                                            Self::read_ebml_float(source, a_size as usize)? as u32
+                                    }
+                                    0x9F => {
+                                        channels =
+                                            Self::read_ebml_uint(source, a_size as usize)? as u8
+                                    }
+                                    0x6264 => {
+                                        bit_depth =
+                                            Self::read_ebml_uint(source, a_size as usize)? as u8
+                                    }
                                     _ => source.seek(source.position() + a_size)?,
                                 }
                             }
@@ -1128,7 +1177,11 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mkv_tags(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo) -> LavResult<()> {
+    fn parse_mkv_tags(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+    ) -> LavResult<()> {
         while source.position() < end {
             let element_id = Self::read_ebml_id(source)?;
             let element_size = Self::read_ebml_size(source)?;
@@ -1150,8 +1203,12 @@ impl LavSplitter {
                             let st_id = Self::read_ebml_id(source)?;
                             let st_size = Self::read_ebml_size(source)?;
                             match st_id {
-                                0x45A3 => tag_name = Self::read_ebml_string(source, st_size as usize)?,
-                                0x4487 => tag_value = Self::read_ebml_string(source, st_size as usize)?,
+                                0x45A3 => {
+                                    tag_name = Self::read_ebml_string(source, st_size as usize)?
+                                }
+                                0x4487 => {
+                                    tag_value = Self::read_ebml_string(source, st_size as usize)?
+                                }
                                 _ => source.seek(source.position() + st_size)?,
                             }
                         }
@@ -1169,7 +1226,11 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mkv_chapters(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo) -> LavResult<()> {
+    fn parse_mkv_chapters(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+    ) -> LavResult<()> {
         while source.position() < end {
             let element_id = Self::read_ebml_id(source)?;
             let element_size = Self::read_ebml_size(source)?;
@@ -1192,8 +1253,15 @@ impl LavSplitter {
                             let ch_id = Self::read_ebml_id(source)?;
                             let ch_size = Self::read_ebml_size(source)?;
                             match ch_id {
-                                0x91 => start_us = (Self::read_ebml_uint(source, ch_size as usize)? / 1000) as i64,
-                                0x92 => end_us = (Self::read_ebml_uint(source, ch_size as usize)? / 1000) as i64,
+                                0x91 => {
+                                    start_us = (Self::read_ebml_uint(source, ch_size as usize)?
+                                        / 1000)
+                                        as i64
+                                }
+                                0x92 => {
+                                    end_us = (Self::read_ebml_uint(source, ch_size as usize)?
+                                        / 1000) as i64
+                                }
                                 0x80 => {
                                     // ChapterDisplay
                                     let disp_end = source.position() + ch_size;
@@ -1201,7 +1269,10 @@ impl LavSplitter {
                                         let d_id = Self::read_ebml_id(source)?;
                                         let d_size = Self::read_ebml_size(source)?;
                                         if d_id == 0x85 {
-                                            title = Some(Self::read_ebml_string(source, d_size as usize)?);
+                                            title = Some(Self::read_ebml_string(
+                                                source,
+                                                d_size as usize,
+                                            )?);
                                         } else {
                                             source.seek(source.position() + d_size)?;
                                         }
@@ -1373,7 +1444,12 @@ impl LavSplitter {
         Ok(info)
     }
 
-    fn parse_mp4_moov(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo, timescale: &mut u32) -> LavResult<()> {
+    fn parse_mp4_moov(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+        timescale: &mut u32,
+    ) -> LavResult<()> {
         let mut track_index = 0u32;
 
         while source.position() < end {
@@ -1433,7 +1509,13 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_trak(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo, track_index: u32, timescale: u32) -> LavResult<()> {
+    fn parse_mp4_trak(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+        track_index: u32,
+        timescale: u32,
+    ) -> LavResult<()> {
         let mut handler_type = [0u8; 4];
         let mut width = 0u32;
         let mut height = 0u32;
@@ -1456,8 +1538,17 @@ impl LavSplitter {
 
             match &type_buf {
                 b"mdia" => {
-                    Self::parse_mp4_mdia(source, box_end, &mut handler_type, &mut width, &mut height,
-                                         &mut sample_rate, &mut channels, &mut codec_fourcc, &mut codec_private)?;
+                    Self::parse_mp4_mdia(
+                        source,
+                        box_end,
+                        &mut handler_type,
+                        &mut width,
+                        &mut height,
+                        &mut sample_rate,
+                        &mut channels,
+                        &mut codec_fourcc,
+                        &mut codec_private,
+                    )?;
                 }
                 _ => {
                     source.seek(box_end)?;
@@ -1512,9 +1603,17 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_mdia(source: &mut LavSplitterSource, end: u64, handler_type: &mut [u8; 4],
-                      width: &mut u32, height: &mut u32, sample_rate: &mut u32, channels: &mut u8,
-                      codec_fourcc: &mut [u8; 4], codec_private: &mut Vec<u8>) -> LavResult<()> {
+    fn parse_mp4_mdia(
+        source: &mut LavSplitterSource,
+        end: u64,
+        handler_type: &mut [u8; 4],
+        width: &mut u32,
+        height: &mut u32,
+        sample_rate: &mut u32,
+        channels: &mut u8,
+        codec_fourcc: &mut [u8; 4],
+        codec_private: &mut Vec<u8>,
+    ) -> LavResult<()> {
         while source.position() < end {
             let box_start = source.position();
             let mut size_buf = [0u8; 4];
@@ -1534,8 +1633,16 @@ impl LavSplitter {
                     source.seek(box_end)?;
                 }
                 b"minf" => {
-                    Self::parse_mp4_minf(source, box_end, width, height, sample_rate, channels,
-                                         codec_fourcc, codec_private)?;
+                    Self::parse_mp4_minf(
+                        source,
+                        box_end,
+                        width,
+                        height,
+                        sample_rate,
+                        channels,
+                        codec_fourcc,
+                        codec_private,
+                    )?;
                 }
                 _ => {
                     source.seek(box_end)?;
@@ -1545,9 +1652,16 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_minf(source: &mut LavSplitterSource, end: u64, width: &mut u32, height: &mut u32,
-                      sample_rate: &mut u32, channels: &mut u8, codec_fourcc: &mut [u8; 4],
-                      codec_private: &mut Vec<u8>) -> LavResult<()> {
+    fn parse_mp4_minf(
+        source: &mut LavSplitterSource,
+        end: u64,
+        width: &mut u32,
+        height: &mut u32,
+        sample_rate: &mut u32,
+        channels: &mut u8,
+        codec_fourcc: &mut [u8; 4],
+        codec_private: &mut Vec<u8>,
+    ) -> LavResult<()> {
         while source.position() < end {
             let box_start = source.position();
             let mut size_buf = [0u8; 4];
@@ -1561,8 +1675,16 @@ impl LavSplitter {
             let box_end = box_start + box_size;
 
             if &type_buf == b"stbl" {
-                Self::parse_mp4_stbl(source, box_end, width, height, sample_rate, channels,
-                                     codec_fourcc, codec_private)?;
+                Self::parse_mp4_stbl(
+                    source,
+                    box_end,
+                    width,
+                    height,
+                    sample_rate,
+                    channels,
+                    codec_fourcc,
+                    codec_private,
+                )?;
             } else {
                 source.seek(box_end)?;
             }
@@ -1570,9 +1692,16 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_stbl(source: &mut LavSplitterSource, end: u64, width: &mut u32, height: &mut u32,
-                      sample_rate: &mut u32, channels: &mut u8, codec_fourcc: &mut [u8; 4],
-                      codec_private: &mut Vec<u8>) -> LavResult<()> {
+    fn parse_mp4_stbl(
+        source: &mut LavSplitterSource,
+        end: u64,
+        width: &mut u32,
+        height: &mut u32,
+        sample_rate: &mut u32,
+        channels: &mut u8,
+        codec_fourcc: &mut [u8; 4],
+        codec_private: &mut Vec<u8>,
+    ) -> LavResult<()> {
         while source.position() < end {
             let box_start = source.position();
             let mut size_buf = [0u8; 4];
@@ -1624,12 +1753,17 @@ impl LavSplitter {
                             source.read_exact(codec_private)?;
                             break;
                         } else {
-                            source.seek(source.position() + u32::from_be_bytes(ext_size) as u64 - 8)?;
+                            source.seek(
+                                source.position() + u32::from_be_bytes(ext_size) as u64 - 8,
+                            )?;
                         }
                     }
                 }
                 // Audio-specific
-                else if codec_fourcc == b"mp4a" || codec_fourcc == b"ac-3" || codec_fourcc == b"fLaC" {
+                else if codec_fourcc == b"mp4a"
+                    || codec_fourcc == b"ac-3"
+                    || codec_fourcc == b"fLaC"
+                {
                     source.seek(source.position() + 8)?; // reserved
                     let mut ch = [0u8; 2];
                     source.read_exact(&mut ch)?;
@@ -1649,7 +1783,8 @@ impl LavSplitter {
 
                         if &ext_type == b"esds" {
                             // Parse ESDS for AudioSpecificConfig
-                            let esds_end = source.position() + u32::from_be_bytes(ext_size) as u64 - 8;
+                            let esds_end =
+                                source.position() + u32::from_be_bytes(ext_size) as u64 - 8;
                             source.seek(source.position() + 4)?; // version, flags
 
                             // Find DecoderConfigDescriptor
@@ -1682,7 +1817,9 @@ impl LavSplitter {
                             }
                             break;
                         } else {
-                            source.seek(source.position() + u32::from_be_bytes(ext_size) as u64 - 8)?;
+                            source.seek(
+                                source.position() + u32::from_be_bytes(ext_size) as u64 - 8,
+                            )?;
                         }
                     }
                 }
@@ -1695,7 +1832,11 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_udta(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo) -> LavResult<()> {
+    fn parse_mp4_udta(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+    ) -> LavResult<()> {
         while source.position() < end {
             let box_start = source.position();
             let mut size_buf = [0u8; 4];
@@ -1710,7 +1851,7 @@ impl LavSplitter {
 
             if &type_buf == b"meta" {
                 source.seek(source.position() + 4)?; // version, flags
-                // Continue parsing ilst inside meta
+                                                     // Continue parsing ilst inside meta
                 Self::parse_mp4_udta(source, box_end, info)?;
             } else if &type_buf == b"ilst" {
                 // iTunes metadata
@@ -1722,7 +1863,11 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_mp4_ilst(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo) -> LavResult<()> {
+    fn parse_mp4_ilst(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+    ) -> LavResult<()> {
         while source.position() < end {
             let box_start = source.position();
             let mut size_buf = [0u8; 4];
@@ -1812,7 +1957,13 @@ impl LavSplitter {
                     match &list_type {
                         b"hdrl" => {
                             // Main header list
-                            Self::parse_avi_hdrl(source, chunk_end, &mut info, &mut fps, &mut total_frames)?;
+                            Self::parse_avi_hdrl(
+                                source,
+                                chunk_end,
+                                &mut info,
+                                &mut fps,
+                                &mut total_frames,
+                            )?;
                         }
                         b"strl" => {
                             // Stream header list
@@ -1852,7 +2003,13 @@ impl LavSplitter {
         Ok(info)
     }
 
-    fn parse_avi_hdrl(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo, fps: &mut f64, total_frames: &mut u32) -> LavResult<()> {
+    fn parse_avi_hdrl(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+        fps: &mut f64,
+        total_frames: &mut u32,
+    ) -> LavResult<()> {
         while source.position() + 8 <= end {
             let mut fourcc = [0u8; 4];
             source.read_exact(&mut fourcc)?;
@@ -1881,7 +2038,12 @@ impl LavSplitter {
                 let mut list_type = [0u8; 4];
                 source.read_exact(&mut list_type)?;
                 if &list_type == b"strl" {
-                    Self::parse_avi_strl(source, chunk_end, info, info.video_streams.len() as u32 + info.audio_streams.len() as u32)?;
+                    Self::parse_avi_strl(
+                        source,
+                        chunk_end,
+                        info,
+                        info.video_streams.len() as u32 + info.audio_streams.len() as u32,
+                    )?;
                 } else {
                     source.seek(chunk_end)?;
                 }
@@ -1896,7 +2058,12 @@ impl LavSplitter {
         Ok(())
     }
 
-    fn parse_avi_strl(source: &mut LavSplitterSource, end: u64, info: &mut MediaInfo, track_index: u32) -> LavResult<()> {
+    fn parse_avi_strl(
+        source: &mut LavSplitterSource,
+        end: u64,
+        info: &mut MediaInfo,
+        track_index: u32,
+    ) -> LavResult<()> {
         let mut stream_type = [0u8; 4];
         let mut fourcc = [0u8; 4];
         let mut scale = 1u32;
@@ -1970,7 +2137,11 @@ impl LavSplitter {
         }
 
         // Create stream info
-        let frame_rate = if scale > 0 { rate as f64 / scale as f64 } else { 0.0 };
+        let frame_rate = if scale > 0 {
+            rate as f64 / scale as f64
+        } else {
+            0.0
+        };
 
         if &stream_type == b"vids" {
             let codec = VideoCodec::from_fourcc(&fourcc);
@@ -2070,7 +2241,8 @@ impl LavSplitter {
                     let mut pat_header = [0u8; 8];
                     source.read_exact(&mut pat_header)?;
 
-                    let section_length = ((pat_header[1] as u16 & 0x0F) << 8) | pat_header[2] as u16;
+                    let section_length =
+                        ((pat_header[1] as u16 & 0x0F) << 8) | pat_header[2] as u16;
                     let entries = (section_length - 9) / 4;
 
                     for _ in 0..entries {
@@ -2088,8 +2260,10 @@ impl LavSplitter {
                     let mut pmt_header = [0u8; 12];
                     source.read_exact(&mut pmt_header)?;
 
-                    let section_length = ((pmt_header[1] as u16 & 0x0F) << 8) | pmt_header[2] as u16;
-                    let program_info_length = ((pmt_header[10] as u16 & 0x0F) << 8) | pmt_header[11] as u16;
+                    let section_length =
+                        ((pmt_header[1] as u16 & 0x0F) << 8) | pmt_header[2] as u16;
+                    let program_info_length =
+                        ((pmt_header[10] as u16 & 0x0F) << 8) | pmt_header[11] as u16;
 
                     source.seek(source.position() + program_info_length as u64)?;
 
@@ -2099,7 +2273,8 @@ impl LavSplitter {
                         source.read_exact(&mut stream_info)?;
 
                         let stream_type = stream_info[0];
-                        let es_info_length = ((stream_info[3] as u16 & 0x0F) << 8) | stream_info[4] as u16;
+                        let es_info_length =
+                            ((stream_info[3] as u16 & 0x0F) << 8) | stream_info[4] as u16;
 
                         source.seek(source.position() + es_info_length as u64)?;
 
@@ -2233,7 +2408,9 @@ impl LavSplitter {
                         match block_id {
                             0xE7 => {
                                 // Timecode
-                                cluster_timecode = Self::read_ebml_uint(&mut self.source, block_size as usize)? as i64;
+                                cluster_timecode =
+                                    Self::read_ebml_uint(&mut self.source, block_size as usize)?
+                                        as i64;
                             }
                             0xA3 | 0xA1 => {
                                 // SimpleBlock or Block
@@ -2312,8 +2489,8 @@ impl LavSplitter {
             let chunk_size = u32::from_le_bytes(size_buf) as u64;
 
             // Check for video/audio chunks (##dc, ##wb)
-            if (fourcc[2] == b'd' && fourcc[3] == b'c') ||
-               (fourcc[2] == b'w' && fourcc[3] == b'b') {
+            if (fourcc[2] == b'd' && fourcc[3] == b'c') || (fourcc[2] == b'w' && fourcc[3] == b'b')
+            {
                 let stream_index = ((fourcc[0] - b'0') * 10 + (fourcc[1] - b'0')) as u32;
                 let is_video = fourcc[2] == b'd';
 
@@ -2384,7 +2561,8 @@ impl LavSplitter {
             if has_adaptation {
                 let mut adapt_len = [0u8; 1];
                 self.source.read_exact(&mut adapt_len)?;
-                self.source.seek(self.source.position() + adapt_len[0] as u64)?;
+                self.source
+                    .seek(self.source.position() + adapt_len[0] as u64)?;
             }
 
             if has_payload && pid > 0x1F {
@@ -2425,13 +2603,14 @@ impl LavSplitter {
                         if (pes_header[7] & 0x80) != 0 && pes_header_len >= 5 {
                             let mut pts_buf = [0u8; 5];
                             self.source.read_exact(&mut pts_buf)?;
-                            let pts = (((pts_buf[0] as i64 >> 1) & 0x07) << 30) |
-                                     ((pts_buf[1] as i64) << 22) |
-                                     (((pts_buf[2] as i64 >> 1) & 0x7F) << 15) |
-                                     ((pts_buf[3] as i64) << 7) |
-                                     ((pts_buf[4] as i64 >> 1) & 0x7F);
+                            let pts = (((pts_buf[0] as i64 >> 1) & 0x07) << 30)
+                                | ((pts_buf[1] as i64) << 22)
+                                | (((pts_buf[2] as i64 >> 1) & 0x7F) << 15)
+                                | ((pts_buf[3] as i64) << 7)
+                                | ((pts_buf[4] as i64 >> 1) & 0x7F);
                             current_pts = pts * 1_000_000 / 90_000; // Convert to microseconds
-                            self.source.seek(self.source.position() + pes_header_len - 5)?;
+                            self.source
+                                .seek(self.source.position() + pes_header_len - 5)?;
                         } else {
                             self.source.seek(self.source.position() + pes_header_len)?;
                         }
@@ -2526,13 +2705,13 @@ pub struct VideoDecoderConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HwDecoder {
-    Nvdec,      // NVIDIA
-    Amf,        // AMD
-    Qsv,        // Intel
-    Vaapi,      // Linux VA-API
-    Dxva2,      // Windows DirectX
-    D3D11,      // Windows Direct3D 11
-    VideoToolbox,  // macOS
+    Nvdec,        // NVIDIA
+    Amf,          // AMD
+    Qsv,          // Intel
+    Vaapi,        // Linux VA-API
+    Dxva2,        // Windows DirectX
+    D3D11,        // Windows Direct3D 11
+    VideoToolbox, // macOS
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2548,7 +2727,7 @@ impl Default for VideoDecoderConfig {
             prefer_hw: true,
             hw_decoder: None,
             output_format: PixelFormat::Nv12,
-            threads: 0,  // Auto
+            threads: 0, // Auto
             deinterlace: DeinterlaceMode::Auto,
         }
     }
@@ -2610,7 +2789,10 @@ impl LavVideo {
         #[cfg(target_os = "windows")]
         {
             if std::path::Path::new("C:\\Windows\\System32\\nvdec64.dll").exists() {
-                if matches!(codec, VideoCodec::H264 | VideoCodec::H265 | VideoCodec::Vp9 | VideoCodec::Av1) {
+                if matches!(
+                    codec,
+                    VideoCodec::H264 | VideoCodec::H265 | VideoCodec::Vp9 | VideoCodec::Av1
+                ) {
                     return Some(preferred.unwrap_or(HwDecoder::Nvdec));
                 }
             }
@@ -2662,10 +2844,14 @@ impl LavVideo {
 
         // Parse SPS
         for _ in 0..num_sps {
-            if offset + 2 > data.len() { break; }
+            if offset + 2 > data.len() {
+                break;
+            }
             let sps_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
             offset += 2;
-            if offset + sps_len > data.len() { break; }
+            if offset + sps_len > data.len() {
+                break;
+            }
 
             // Add start code + SPS
             let mut nalu = vec![0x00, 0x00, 0x00, 0x01];
@@ -2680,10 +2866,14 @@ impl LavVideo {
             offset += 1;
 
             for _ in 0..num_pps {
-                if offset + 2 > data.len() { break; }
+                if offset + 2 > data.len() {
+                    break;
+                }
                 let pps_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
                 offset += 2;
-                if offset + pps_len > data.len() { break; }
+                if offset + pps_len > data.len() {
+                    break;
+                }
 
                 let mut nalu = vec![0x00, 0x00, 0x00, 0x01];
                 nalu.extend_from_slice(&data[offset..offset + pps_len]);
@@ -2745,7 +2935,9 @@ impl LavVideo {
 
     /// REAL H.264 decoding using openh264 crate
     fn decode_h264(&mut self, packet: &Packet) -> LavResult<Vec<VideoFrame>> {
-        let decoder = self.h264_decoder.as_mut()
+        let decoder = self
+            .h264_decoder
+            .as_mut()
             .ok_or_else(|| LavError::DecoderInit("H.264 decoder not initialized".into()))?;
 
         // Convert length-prefixed NALUs to Annex B if needed
@@ -2819,9 +3011,10 @@ impl LavVideo {
                 // Decoder needs more data
                 Ok(Vec::new())
             }
-            Err(e) => {
-                Err(LavError::DecodeError(format!("OpenH264 decode error: {:?}", e)))
-            }
+            Err(e) => Err(LavError::DecodeError(format!(
+                "OpenH264 decode error: {:?}",
+                e
+            ))),
         }
     }
 
@@ -2838,7 +3031,10 @@ impl LavVideo {
 
         while offset + 4 <= data.len() {
             let nalu_len = u32::from_be_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]) as usize;
             offset += 4;
 
@@ -2863,17 +3059,23 @@ impl LavVideo {
     fn decode_h265(&mut self, _packet: &Packet) -> LavResult<Vec<VideoFrame>> {
         // HEVC requires HW decoder or external library
         // No good pure-Rust HEVC decoder exists yet
-        Err(LavError::UnsupportedCodec("H.265 requires hardware decoder".into()))
+        Err(LavError::UnsupportedCodec(
+            "H.265 requires hardware decoder".into(),
+        ))
     }
 
     fn decode_vp9(&mut self, _packet: &Packet) -> LavResult<Vec<VideoFrame>> {
         // VP9 typically uses HW decoder
-        Err(LavError::UnsupportedCodec("VP9 requires hardware decoder".into()))
+        Err(LavError::UnsupportedCodec(
+            "VP9 requires hardware decoder".into(),
+        ))
     }
 
     fn decode_av1(&mut self, _packet: &Packet) -> LavResult<Vec<VideoFrame>> {
         // Would use dav1d crate - TODO: add dav1d dependency
-        Err(LavError::UnsupportedCodec("AV1 decoder not yet implemented".into()))
+        Err(LavError::UnsupportedCodec(
+            "AV1 decoder not yet implemented".into(),
+        ))
     }
 }
 
@@ -3008,7 +3210,7 @@ impl LavAudio {
             format: SampleFormat::S16,
             sample_rate: self.stream_info.sample_rate,
             channels: self.stream_info.channels,
-            samples: 0,  // Compressed - no sample count
+            samples: 0, // Compressed - no sample count
             pts: packet.pts,
         }])
     }
@@ -3034,7 +3236,7 @@ impl LavAudio {
     }
 
     fn add_adts_header(&self, data: &[u8]) -> Vec<u8> {
-        let frame_len = data.len() + 7;  // ADTS header is 7 bytes
+        let frame_len = data.len() + 7; // ADTS header is 7 bytes
 
         // Parse AudioSpecificConfig to get profile and sample rate index
         let (profile, sample_rate_idx, channel_config) = if self.codec_private.len() >= 2 {
@@ -3051,13 +3253,13 @@ impl LavAudio {
         let mut adts = Vec::with_capacity(frame_len);
 
         // ADTS header (7 bytes)
-        adts.push(0xFF);  // Sync word
-        adts.push(0xF1);  // MPEG-4, Layer 0, no CRC
+        adts.push(0xFF); // Sync word
+        adts.push(0xF1); // MPEG-4, Layer 0, no CRC
         adts.push((profile << 6) | (sample_rate_idx << 2) | ((channel_config >> 2) & 0x01));
         adts.push(((channel_config & 0x03) << 6) | ((frame_len >> 11) & 0x03) as u8);
         adts.push(((frame_len >> 3) & 0xFF) as u8);
         adts.push((((frame_len & 0x07) << 5) | 0x1F) as u8);
-        adts.push(0xFC);  // Buffer fullness
+        adts.push(0xFC); // Buffer fullness
 
         adts.extend_from_slice(data);
         adts
@@ -3073,7 +3275,9 @@ impl LavAudio {
     fn decode_dts(&mut self, packet: &Packet) -> LavResult<Vec<AudioFrame>> {
         // DTS decoding is complex - most implementations passthrough to receiver
         // For software decode, would need dedicated DTS decoder
-        Err(LavError::UnsupportedCodec("DTS software decode not implemented - use passthrough".into()))
+        Err(LavError::UnsupportedCodec(
+            "DTS software decode not implemented - use passthrough".into(),
+        ))
     }
 
     /// REAL FLAC decoding
@@ -3117,9 +3321,7 @@ impl LavAudio {
         let (data, format) = match self.config.output_format {
             SampleFormat::F32 => {
                 let samples = self.pcm_to_f32(&packet.data, bytes_per_sample);
-                let bytes: Vec<u8> = samples.iter()
-                    .flat_map(|&s| s.to_le_bytes())
-                    .collect();
+                let bytes: Vec<u8> = samples.iter().flat_map(|&s| s.to_le_bytes()).collect();
                 (bytes, SampleFormat::F32)
             }
             _ => (packet.data.clone(), SampleFormat::S16),
@@ -3155,8 +3357,12 @@ impl LavAudio {
                 // 24-bit signed little-endian
                 data.chunks_exact(3)
                     .map(|chunk| {
-                        let sample = i32::from_le_bytes([chunk[0], chunk[1], chunk[2],
-                            if chunk[2] & 0x80 != 0 { 0xFF } else { 0x00 }]);
+                        let sample = i32::from_le_bytes([
+                            chunk[0],
+                            chunk[1],
+                            chunk[2],
+                            if chunk[2] & 0x80 != 0 { 0xFF } else { 0x00 },
+                        ]);
                         sample as f32 / 8388608.0
                     })
                     .collect()
@@ -3175,13 +3381,20 @@ impl LavAudio {
     }
 
     /// Generic symphonia-based decoding for supported formats
-    fn decode_with_symphonia(&mut self, data: &[u8], pts: i64, codec_hint: &str) -> LavResult<Vec<AudioFrame>> {
+    fn decode_with_symphonia(
+        &mut self,
+        data: &[u8],
+        pts: i64,
+        codec_hint: &str,
+    ) -> LavResult<Vec<AudioFrame>> {
+        use std::io::Cursor;
         use symphonia::core::audio::SampleBuffer;
-        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CODEC_TYPE_FLAC,
-            CODEC_TYPE_MP3, CODEC_TYPE_VORBIS, CODEC_TYPE_OPUS};
+        use symphonia::core::codecs::{
+            DecoderOptions, CODEC_TYPE_AAC, CODEC_TYPE_FLAC, CODEC_TYPE_MP3, CODEC_TYPE_OPUS,
+            CODEC_TYPE_VORBIS,
+        };
         use symphonia::core::formats::Packet as SymphoniaPacket;
         use symphonia::core::io::MediaSourceStream;
-        use std::io::Cursor;
 
         // Create a media source from the packet data
         let cursor = Cursor::new(data.to_vec());
@@ -3199,14 +3412,18 @@ impl LavAudio {
 
         // Create codec parameters
         let mut codec_params = symphonia::core::codecs::CodecParameters::new();
-        codec_params.for_codec(codec_type)
+        codec_params
+            .for_codec(codec_type)
             .with_sample_rate(self.stream_info.sample_rate)
-            .with_channels(symphonia::core::audio::Channels::FRONT_LEFT |
-                          symphonia::core::audio::Channels::FRONT_RIGHT);
+            .with_channels(
+                symphonia::core::audio::Channels::FRONT_LEFT
+                    | symphonia::core::audio::Channels::FRONT_RIGHT,
+            );
 
         // Create decoder
         let decoder_opts = DecoderOptions::default();
-        let mut decoder = match symphonia::default::get_codecs().make(&codec_params, &decoder_opts) {
+        let mut decoder = match symphonia::default::get_codecs().make(&codec_params, &decoder_opts)
+        {
             Ok(d) => d,
             Err(e) => return Err(LavError::DecoderInit(format!("Symphonia: {}", e))),
         };
@@ -3228,9 +3445,7 @@ impl LavAudio {
                 let num_samples = samples.len() / spec.channels.count();
 
                 // Convert f32 samples to bytes
-                let data: Vec<u8> = samples.iter()
-                    .flat_map(|&s| s.to_le_bytes())
-                    .collect();
+                let data: Vec<u8> = samples.iter().flat_map(|&s| s.to_le_bytes()).collect();
 
                 Ok(vec![AudioFrame {
                     data,
@@ -3241,9 +3456,10 @@ impl LavAudio {
                     pts,
                 }])
             }
-            Err(e) => {
-                Err(LavError::DecodeError(format!("Symphonia decode error: {}", e)))
-            }
+            Err(e) => Err(LavError::DecodeError(format!(
+                "Symphonia decode error: {}",
+                e
+            ))),
         }
     }
 }
@@ -3269,7 +3485,12 @@ impl LavPipeline {
 
         // Create video decoder
         let video = if let Some(stream_idx) = splitter.video_stream {
-            if let Some(stream) = splitter.info.video_streams.iter().find(|s| s.index == stream_idx) {
+            if let Some(stream) = splitter
+                .info
+                .video_streams
+                .iter()
+                .find(|s| s.index == stream_idx)
+            {
                 LavVideo::new(stream.clone(), VideoDecoderConfig::default()).ok()
             } else {
                 None
@@ -3280,7 +3501,12 @@ impl LavPipeline {
 
         // Create audio decoder
         let audio = if let Some(stream_idx) = splitter.audio_stream {
-            if let Some(stream) = splitter.info.audio_streams.iter().find(|s| s.index == stream_idx) {
+            if let Some(stream) = splitter
+                .info
+                .audio_streams
+                .iter()
+                .find(|s| s.index == stream_idx)
+            {
                 LavAudio::new(stream.clone(), AudioDecoderConfig::default()).ok()
             } else {
                 None
@@ -3328,10 +3554,15 @@ mod tests {
     fn test_format_detection() {
         // MKV signature
         let mkv = [0x1A, 0x45, 0xDF, 0xA3, 0, 0, 0, 0, 0, 0, 0, 0];
-        assert_eq!(ContainerFormat::detect(&mkv), Some(ContainerFormat::Matroska));
+        assert_eq!(
+            ContainerFormat::detect(&mkv),
+            Some(ContainerFormat::Matroska)
+        );
 
         // MP4 ftyp
-        let mp4 = [0, 0, 0, 0x20, b'f', b't', b'y', b'p', b'i', b's', b'o', b'm'];
+        let mp4 = [
+            0, 0, 0, 0x20, b'f', b't', b'y', b'p', b'i', b's', b'o', b'm',
+        ];
         assert_eq!(ContainerFormat::detect(&mp4), Some(ContainerFormat::Mp4));
 
         // AVI
@@ -3352,9 +3583,18 @@ mod tests {
 
     #[test]
     fn test_audio_codec_from_mkv() {
-        assert_eq!(AudioCodec::from_mkv_codec_id("A_AAC"), Some(AudioCodec::Aac));
-        assert_eq!(AudioCodec::from_mkv_codec_id("A_OPUS"), Some(AudioCodec::Opus));
-        assert_eq!(AudioCodec::from_mkv_codec_id("A_FLAC"), Some(AudioCodec::Flac));
+        assert_eq!(
+            AudioCodec::from_mkv_codec_id("A_AAC"),
+            Some(AudioCodec::Aac)
+        );
+        assert_eq!(
+            AudioCodec::from_mkv_codec_id("A_OPUS"),
+            Some(AudioCodec::Opus)
+        );
+        assert_eq!(
+            AudioCodec::from_mkv_codec_id("A_FLAC"),
+            Some(AudioCodec::Flac)
+        );
     }
 
     #[test]

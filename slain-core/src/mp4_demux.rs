@@ -8,7 +8,7 @@
 // 1. CONTAINER DEMUXING (libavformat)
 //    - MKV  → Already have mkv.rs (1540 lines)
 //    - MP4  → Need to write
-//    - AVI  → Need to write  
+//    - AVI  → Need to write
 //    - WebM → MKV variant, already covered
 //    - TS   → Need for IPTV
 //
@@ -40,9 +40,9 @@
 // THIS FILE: Container demuxing for MP4/AVI/TS
 // ════════════════════════════════════════════════════════════════════════════
 
-use std::io::{Read, Seek, SeekFrom};
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 
 // ============================================================================
 // Common Types (shared across containers)
@@ -93,8 +93,8 @@ pub enum SubtitleCodec {
     SRT,
     ASS,
     VTT,
-    PGS,      // Blu-ray
-    VobSub,   // DVD
+    PGS,    // Blu-ray
+    VobSub, // DVD
     DVBSub,
     Unknown(u32),
 }
@@ -108,7 +108,7 @@ pub struct StreamInfo {
     pub title: Option<String>,
     pub default: bool,
     pub forced: bool,
-    pub extra_data: Vec<u8>,  // Codec-specific init data (SPS/PPS for H.264, etc)
+    pub extra_data: Vec<u8>, // Codec-specific init data (SPS/PPS for H.264, etc)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,8 +172,8 @@ pub enum ChannelLayout {
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub stream_index: u32,
-    pub pts: i64,           // Presentation timestamp
-    pub dts: i64,           // Decode timestamp
+    pub pts: i64, // Presentation timestamp
+    pub dts: i64, // Decode timestamp
     pub duration: i64,
     pub keyframe: bool,
     pub data: Vec<u8>,
@@ -187,41 +187,41 @@ pub mod mp4 {
     use super::*;
 
     /// MP4 atom/box types
-    const FTYP: u32 = 0x66747970;  // ftyp
-    const MOOV: u32 = 0x6D6F6F76;  // moov
-    const MVHD: u32 = 0x6D766864;  // mvhd
-    const TRAK: u32 = 0x7472616B;  // trak
-    const TKHD: u32 = 0x746B6864;  // tkhd
-    const MDIA: u32 = 0x6D646961;  // mdia
-    const MDHD: u32 = 0x6D646864;  // mdhd
-    const HDLR: u32 = 0x68646C72;  // hdlr
-    const MINF: u32 = 0x6D696E66;  // minf
-    const STBL: u32 = 0x7374626C;  // stbl
-    const STSD: u32 = 0x73747364;  // stsd
-    const STTS: u32 = 0x73747473;  // stts
-    const STSC: u32 = 0x73747363;  // stsc
-    const STSZ: u32 = 0x7374737A;  // stsz
-    const STCO: u32 = 0x7374636F;  // stco
-    const CO64: u32 = 0x636F3634;  // co64
-    const STSS: u32 = 0x73747373;  // stss (keyframes)
-    const CTTS: u32 = 0x63747473;  // ctts (composition time)
-    const MDAT: u32 = 0x6D646174;  // mdat
-    const EDTS: u32 = 0x65647473;  // edts
-    const ELST: u32 = 0x656C7374;  // elst
+    const FTYP: u32 = 0x66747970; // ftyp
+    const MOOV: u32 = 0x6D6F6F76; // moov
+    const MVHD: u32 = 0x6D766864; // mvhd
+    const TRAK: u32 = 0x7472616B; // trak
+    const TKHD: u32 = 0x746B6864; // tkhd
+    const MDIA: u32 = 0x6D646961; // mdia
+    const MDHD: u32 = 0x6D646864; // mdhd
+    const HDLR: u32 = 0x68646C72; // hdlr
+    const MINF: u32 = 0x6D696E66; // minf
+    const STBL: u32 = 0x7374626C; // stbl
+    const STSD: u32 = 0x73747364; // stsd
+    const STTS: u32 = 0x73747473; // stts
+    const STSC: u32 = 0x73747363; // stsc
+    const STSZ: u32 = 0x7374737A; // stsz
+    const STCO: u32 = 0x7374636F; // stco
+    const CO64: u32 = 0x636F3634; // co64
+    const STSS: u32 = 0x73747373; // stss (keyframes)
+    const CTTS: u32 = 0x63747473; // ctts (composition time)
+    const MDAT: u32 = 0x6D646174; // mdat
+    const EDTS: u32 = 0x65647473; // edts
+    const ELST: u32 = 0x656C7374; // elst
 
     // Video codec atoms
-    const AVC1: u32 = 0x61766331;  // avc1 (H.264)
-    const HVC1: u32 = 0x68766331;  // hvc1 (HEVC)
-    const HEV1: u32 = 0x68657631;  // hev1 (HEVC)
-    const VP09: u32 = 0x76703039;  // vp09 (VP9)
-    const AV01: u32 = 0x61763031;  // av01 (AV1)
+    const AVC1: u32 = 0x61766331; // avc1 (H.264)
+    const HVC1: u32 = 0x68766331; // hvc1 (HEVC)
+    const HEV1: u32 = 0x68657631; // hev1 (HEVC)
+    const VP09: u32 = 0x76703039; // vp09 (VP9)
+    const AV01: u32 = 0x61763031; // av01 (AV1)
 
     // Audio codec atoms
-    const MP4A: u32 = 0x6D703461;  // mp4a (AAC)
-    const AC3_: u32 = 0x61632D33;  // ac-3
-    const EC3_: u32 = 0x65632D33;  // ec-3
-    const FLAC: u32 = 0x664C6143;  // fLaC
-    const OPUS: u32 = 0x4F707573;  // Opus
+    const MP4A: u32 = 0x6D703461; // mp4a (AAC)
+    const AC3_: u32 = 0x61632D33; // ac-3
+    const EC3_: u32 = 0x65632D33; // ec-3
+    const FLAC: u32 = 0x664C6143; // fLaC
+    const OPUS: u32 = 0x4F707573; // Opus
 
     #[derive(Debug)]
     pub struct Mp4Demuxer<R: Read + Seek> {
@@ -249,10 +249,10 @@ pub mod mp4 {
     struct SampleTable {
         sample_sizes: Vec<u32>,
         chunk_offsets: Vec<u64>,
-        sample_to_chunk: Vec<(u32, u32, u32)>,  // first_chunk, samples_per_chunk, sample_desc_index
-        time_to_sample: Vec<(u32, u32)>,         // sample_count, sample_delta
-        keyframes: Vec<u32>,                      // Sample numbers that are keyframes
-        composition_offsets: Vec<(u32, i32)>,    // sample_count, offset
+        sample_to_chunk: Vec<(u32, u32, u32)>, // first_chunk, samples_per_chunk, sample_desc_index
+        time_to_sample: Vec<(u32, u32)>,       // sample_count, sample_delta
+        keyframes: Vec<u32>,                   // Sample numbers that are keyframes
+        composition_offsets: Vec<(u32, i32)>,  // sample_count, offset
     }
 
     impl<R: Read + Seek> Mp4Demuxer<R> {
@@ -270,15 +270,18 @@ pub mod mp4 {
         }
 
         fn parse_atoms(&mut self) -> Result<(), String> {
-            let file_size = self.reader.seek(SeekFrom::End(0))
+            let file_size = self
+                .reader
+                .seek(SeekFrom::End(0))
                 .map_err(|e| format!("Seek error: {}", e))?;
-            self.reader.seek(SeekFrom::Start(0))
+            self.reader
+                .seek(SeekFrom::Start(0))
                 .map_err(|e| format!("Seek error: {}", e))?;
 
             let mut pos = 0u64;
             while pos < file_size {
                 let (size, atom_type) = self.read_atom_header()?;
-                
+
                 match atom_type {
                     FTYP => {
                         // File type - just skip for now
@@ -296,7 +299,7 @@ pub mod mp4 {
                         self.skip_bytes(size - 8)?;
                     }
                 }
-                
+
                 pos += size;
             }
 
@@ -305,25 +308,32 @@ pub mod mp4 {
 
         fn read_atom_header(&mut self) -> Result<(u64, u32), String> {
             let mut buf = [0u8; 8];
-            self.reader.read_exact(&mut buf)
+            self.reader
+                .read_exact(&mut buf)
                 .map_err(|e| format!("Read error: {}", e))?;
-            
+
             let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64;
             let atom_type = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
 
             let actual_size = if size == 1 {
                 // 64-bit size
                 let mut buf64 = [0u8; 8];
-                self.reader.read_exact(&mut buf64)
+                self.reader
+                    .read_exact(&mut buf64)
                     .map_err(|e| format!("Read error: {}", e))?;
                 u64::from_be_bytes(buf64)
             } else if size == 0 {
                 // Extends to end of file
-                let current = self.reader.stream_position()
+                let current = self
+                    .reader
+                    .stream_position()
                     .map_err(|e| format!("Position error: {}", e))?;
-                let end = self.reader.seek(SeekFrom::End(0))
+                let end = self
+                    .reader
+                    .seek(SeekFrom::End(0))
                     .map_err(|e| format!("Seek error: {}", e))?;
-                self.reader.seek(SeekFrom::Start(current))
+                self.reader
+                    .seek(SeekFrom::Start(current))
                     .map_err(|e| format!("Seek error: {}", e))?;
                 end - current + 8
             } else {
@@ -334,46 +344,54 @@ pub mod mp4 {
         }
 
         fn skip_bytes(&mut self, n: u64) -> Result<(), String> {
-            self.reader.seek(SeekFrom::Current(n as i64))
+            self.reader
+                .seek(SeekFrom::Current(n as i64))
                 .map_err(|e| format!("Seek error: {}", e))?;
             Ok(())
         }
 
         fn read_u8(&mut self) -> Result<u8, String> {
             let mut buf = [0u8; 1];
-            self.reader.read_exact(&mut buf)
+            self.reader
+                .read_exact(&mut buf)
                 .map_err(|e| format!("Read error: {}", e))?;
             Ok(buf[0])
         }
 
         fn read_u16(&mut self) -> Result<u16, String> {
             let mut buf = [0u8; 2];
-            self.reader.read_exact(&mut buf)
+            self.reader
+                .read_exact(&mut buf)
                 .map_err(|e| format!("Read error: {}", e))?;
             Ok(u16::from_be_bytes(buf))
         }
 
         fn read_u32(&mut self) -> Result<u32, String> {
             let mut buf = [0u8; 4];
-            self.reader.read_exact(&mut buf)
+            self.reader
+                .read_exact(&mut buf)
                 .map_err(|e| format!("Read error: {}", e))?;
             Ok(u32::from_be_bytes(buf))
         }
 
         fn read_u64(&mut self) -> Result<u64, String> {
             let mut buf = [0u8; 8];
-            self.reader.read_exact(&mut buf)
+            self.reader
+                .read_exact(&mut buf)
                 .map_err(|e| format!("Read error: {}", e))?;
             Ok(u64::from_be_bytes(buf))
         }
 
         fn parse_moov(&mut self, size: u64) -> Result<(), String> {
-            let end_pos = self.reader.stream_position()
-                .map_err(|e| format!("Position error: {}", e))? + size;
+            let end_pos = self
+                .reader
+                .stream_position()
+                .map_err(|e| format!("Position error: {}", e))?
+                + size;
 
             while self.reader.stream_position().unwrap_or(end_pos) < end_pos {
                 let (atom_size, atom_type) = self.read_atom_header()?;
-                
+
                 match atom_type {
                     MVHD => self.parse_mvhd(atom_size - 8)?,
                     TRAK => self.parse_trak(atom_size - 8)?,
@@ -389,13 +407,13 @@ pub mod mp4 {
             self.skip_bytes(3)?; // flags
 
             if version == 1 {
-                self.skip_bytes(8)?;  // creation_time
-                self.skip_bytes(8)?;  // modification_time
+                self.skip_bytes(8)?; // creation_time
+                self.skip_bytes(8)?; // modification_time
                 self.timescale = self.read_u32()?;
                 self.duration = self.read_u64()?;
             } else {
-                self.skip_bytes(4)?;  // creation_time
-                self.skip_bytes(4)?;  // modification_time
+                self.skip_bytes(4)?; // creation_time
+                self.skip_bytes(4)?; // modification_time
                 self.timescale = self.read_u32()?;
                 self.duration = self.read_u32()? as u64;
             }
@@ -408,8 +426,11 @@ pub mod mp4 {
         }
 
         fn parse_trak(&mut self, size: u64) -> Result<(), String> {
-            let end_pos = self.reader.stream_position()
-                .map_err(|e| format!("Position error: {}", e))? + size;
+            let end_pos = self
+                .reader
+                .stream_position()
+                .map_err(|e| format!("Position error: {}", e))?
+                + size;
 
             let mut track = Track {
                 id: self.tracks.len() as u32,
@@ -433,7 +454,7 @@ pub mod mp4 {
 
             while self.reader.stream_position().unwrap_or(end_pos) < end_pos {
                 let (atom_size, atom_type) = self.read_atom_header()?;
-                
+
                 match atom_type {
                     TKHD => self.parse_tkhd(&mut track, atom_size - 8)?,
                     MDIA => self.parse_mdia(&mut track, atom_size - 8)?,
@@ -449,17 +470,19 @@ pub mod mp4 {
             let version = self.read_u8()?;
             let flags = {
                 let mut buf = [0u8; 3];
-                self.reader.read_exact(&mut buf).map_err(|e| format!("Read error: {}", e))?;
+                self.reader
+                    .read_exact(&mut buf)
+                    .map_err(|e| format!("Read error: {}", e))?;
                 u32::from_be_bytes([0, buf[0], buf[1], buf[2]])
             };
 
             track.stream_info.default = (flags & 0x01) != 0;
 
             if version == 1 {
-                self.skip_bytes(8)?;  // creation_time
-                self.skip_bytes(8)?;  // modification_time
+                self.skip_bytes(8)?; // creation_time
+                self.skip_bytes(8)?; // modification_time
                 track.id = self.read_u32()?;
-                self.skip_bytes(4)?;  // reserved
+                self.skip_bytes(4)?; // reserved
                 track.duration = self.read_u64()?;
             } else {
                 self.skip_bytes(4)?;
@@ -476,12 +499,15 @@ pub mod mp4 {
         }
 
         fn parse_mdia(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
-            let end_pos = self.reader.stream_position()
-                .map_err(|e| format!("Position error: {}", e))? + size;
+            let end_pos = self
+                .reader
+                .stream_position()
+                .map_err(|e| format!("Position error: {}", e))?
+                + size;
 
             while self.reader.stream_position().unwrap_or(end_pos) < end_pos {
                 let (atom_size, atom_type) = self.read_atom_header()?;
-                
+
                 match atom_type {
                     MDHD => self.parse_mdhd(track, atom_size - 8)?,
                     HDLR => self.parse_hdlr(track, atom_size - 8)?,
@@ -514,7 +540,8 @@ pub mod mp4 {
             let c1 = ((lang >> 10) & 0x1F) as u8 + 0x60;
             let c2 = ((lang >> 5) & 0x1F) as u8 + 0x60;
             let c3 = (lang & 0x1F) as u8 + 0x60;
-            track.stream_info.language = Some(format!("{}{}{}", c1 as char, c2 as char, c3 as char));
+            track.stream_info.language =
+                Some(format!("{}{}{}", c1 as char, c2 as char, c3 as char));
 
             let remaining = if version == 1 { size - 26 } else { size - 18 };
             self.skip_bytes(remaining)?;
@@ -523,13 +550,13 @@ pub mod mp4 {
         }
 
         fn parse_hdlr(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
-            self.skip_bytes(4)?;  // version + flags
-            self.skip_bytes(4)?;  // pre_defined
+            self.skip_bytes(4)?; // version + flags
+            self.skip_bytes(4)?; // pre_defined
 
             let handler_type = self.read_u32()?;
             track.stream_info.codec_type = match handler_type {
-                0x76696465 => CodecType::Video,  // 'vide'
-                0x736F756E => CodecType::Audio,  // 'soun'
+                0x76696465 => CodecType::Video,    // 'vide'
+                0x736F756E => CodecType::Audio,    // 'soun'
                 0x74657874 => CodecType::Subtitle, // 'text'
                 0x73756274 => CodecType::Subtitle, // 'subt'
                 _ => CodecType::Unknown,
@@ -540,12 +567,15 @@ pub mod mp4 {
         }
 
         fn parse_minf(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
-            let end_pos = self.reader.stream_position()
-                .map_err(|e| format!("Position error: {}", e))? + size;
+            let end_pos = self
+                .reader
+                .stream_position()
+                .map_err(|e| format!("Position error: {}", e))?
+                + size;
 
             while self.reader.stream_position().unwrap_or(end_pos) < end_pos {
                 let (atom_size, atom_type) = self.read_atom_header()?;
-                
+
                 if atom_type == STBL {
                     self.parse_stbl(track, atom_size - 8)?;
                 } else {
@@ -557,12 +587,15 @@ pub mod mp4 {
         }
 
         fn parse_stbl(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
-            let end_pos = self.reader.stream_position()
-                .map_err(|e| format!("Position error: {}", e))? + size;
+            let end_pos = self
+                .reader
+                .stream_position()
+                .map_err(|e| format!("Position error: {}", e))?
+                + size;
 
             while self.reader.stream_position().unwrap_or(end_pos) < end_pos {
                 let (atom_size, atom_type) = self.read_atom_header()?;
-                
+
                 match atom_type {
                     STSD => self.parse_stsd(track, atom_size - 8)?,
                     STTS => self.parse_stts(track, atom_size - 8)?,
@@ -580,12 +613,12 @@ pub mod mp4 {
         }
 
         fn parse_stsd(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
-            self.skip_bytes(4)?;  // version + flags
+            self.skip_bytes(4)?; // version + flags
             let entry_count = self.read_u32()?;
 
             if entry_count > 0 {
                 let (entry_size, codec_fourcc) = self.read_atom_header()?;
-                
+
                 track.stream_info.codec = match codec_fourcc {
                     AVC1 => CodecId::Video(VideoCodec::H264),
                     HVC1 | HEV1 => CodecId::Video(VideoCodec::H265),
@@ -602,8 +635,8 @@ pub mod mp4 {
                 // Parse video/audio specific info
                 match track.stream_info.codec_type {
                     CodecType::Video => {
-                        self.skip_bytes(6)?;  // reserved
-                        self.skip_bytes(2)?;  // data_reference_index
+                        self.skip_bytes(6)?; // reserved
+                        self.skip_bytes(2)?; // data_reference_index
                         self.skip_bytes(16)?; // pre_defined, reserved
                         let width = self.read_u16()?;
                         let height = self.read_u16()?;
@@ -625,7 +658,7 @@ pub mod mp4 {
                             // Look for codec config
                             let start = self.reader.stream_position().unwrap_or(0);
                             let end = start + remaining as u64;
-                            
+
                             while self.reader.stream_position().unwrap_or(end) < end {
                                 if let Ok((cfg_size, cfg_type)) = self.read_atom_header() {
                                     if cfg_type == 0x61766343 || cfg_type == 0x68766343 {
@@ -644,12 +677,12 @@ pub mod mp4 {
                         }
                     }
                     CodecType::Audio => {
-                        self.skip_bytes(6)?;  // reserved
-                        self.skip_bytes(2)?;  // data_reference_index
-                        self.skip_bytes(8)?;  // reserved
+                        self.skip_bytes(6)?; // reserved
+                        self.skip_bytes(2)?; // data_reference_index
+                        self.skip_bytes(8)?; // reserved
                         let channels = self.read_u16()?;
                         let bits = self.read_u16()?;
-                        self.skip_bytes(4)?;  // pre_defined, reserved
+                        self.skip_bytes(4)?; // pre_defined, reserved
                         let sample_rate = self.read_u32()? >> 16;
 
                         track.audio_info = Some(AudioInfo {
@@ -669,7 +702,7 @@ pub mod mp4 {
                 }
 
                 // Skip any remaining bytes in stsd
-                let read_so_far = 8 + 78;  // Approximate
+                let read_so_far = 8 + 78; // Approximate
                 if entry_size > read_so_far {
                     self.skip_bytes(entry_size - read_so_far).ok();
                 }
@@ -685,7 +718,10 @@ pub mod mp4 {
             for _ in 0..entry_count {
                 let sample_count = self.read_u32()?;
                 let sample_delta = self.read_u32()?;
-                track.sample_table.time_to_sample.push((sample_count, sample_delta));
+                track
+                    .sample_table
+                    .time_to_sample
+                    .push((sample_count, sample_delta));
             }
 
             Ok(())
@@ -699,7 +735,11 @@ pub mod mp4 {
                 let first_chunk = self.read_u32()?;
                 let samples_per_chunk = self.read_u32()?;
                 let sample_desc_index = self.read_u32()?;
-                track.sample_table.sample_to_chunk.push((first_chunk, samples_per_chunk, sample_desc_index));
+                track.sample_table.sample_to_chunk.push((
+                    first_chunk,
+                    samples_per_chunk,
+                    sample_desc_index,
+                ));
             }
 
             Ok(())
@@ -726,7 +766,10 @@ pub mod mp4 {
             let entry_count = self.read_u32()?;
 
             for _ in 0..entry_count {
-                track.sample_table.chunk_offsets.push(self.read_u32()? as u64);
+                track
+                    .sample_table
+                    .chunk_offsets
+                    .push(self.read_u32()? as u64);
             }
 
             Ok(())
@@ -766,7 +809,10 @@ pub mod mp4 {
                 } else {
                     self.read_u32()? as i32
                 };
-                track.sample_table.composition_offsets.push((sample_count, offset));
+                track
+                    .sample_table
+                    .composition_offsets
+                    .push((sample_count, offset));
             }
 
             Ok(())
@@ -779,12 +825,16 @@ pub mod mp4 {
 
         /// Get video info for video tracks
         pub fn video_info(&self, track_index: usize) -> Option<VideoInfo> {
-            self.tracks.get(track_index).and_then(|t| t.video_info.clone())
+            self.tracks
+                .get(track_index)
+                .and_then(|t| t.video_info.clone())
         }
 
         /// Get audio info for audio tracks
         pub fn audio_info(&self, track_index: usize) -> Option<AudioInfo> {
-            self.tracks.get(track_index).and_then(|t| t.audio_info.clone())
+            self.tracks
+                .get(track_index)
+                .and_then(|t| t.audio_info.clone())
         }
 
         /// Read next packet
@@ -810,12 +860,15 @@ pub mod mp4 {
             // Get sample offset
             let offset = self.get_sample_offset(track, sample_idx)?;
             let size = track.sample_table.sample_sizes.get(sample_idx)?.clone();
-            
+
             // Check if keyframe
             let keyframe = if track.sample_table.keyframes.is_empty() {
-                true  // No keyframe table = all keyframes (e.g., audio)
+                true // No keyframe table = all keyframes (e.g., audio)
             } else {
-                track.sample_table.keyframes.contains(&(sample_idx as u32 + 1))
+                track
+                    .sample_table
+                    .keyframes
+                    .contains(&(sample_idx as u32 + 1))
             };
 
             // Read data
@@ -825,7 +878,7 @@ pub mod mp4 {
 
             // Calculate PTS/DTS
             let pts = best_time;
-            let dts = best_time;  // Simplified - should use ctts
+            let dts = best_time; // Simplified - should use ctts
 
             // Advance to next sample
             self.tracks[track_idx].current_sample += 1;
@@ -873,7 +926,7 @@ pub mod mp4 {
             for i in 0..stsc.len() {
                 let first_chunk = (stsc[i].0 - 1) as usize;
                 let spc = stsc[i].1 as usize;
-                
+
                 let next_first_chunk = if i + 1 < stsc.len() {
                     (stsc[i + 1].0 - 1) as usize
                 } else {
@@ -885,7 +938,7 @@ pub mod mp4 {
                         // Calculate offset within chunk
                         let chunk_offset = *stco.get(c)?;
                         let sample_in_chunk = sample_idx - sample;
-                        
+
                         let mut offset = chunk_offset;
                         for j in 0..sample_in_chunk {
                             offset += *stsz.get(sample + j)? as u64;
@@ -904,7 +957,7 @@ pub mod mp4 {
             for track in &mut self.tracks {
                 // Find closest keyframe before timestamp
                 let target_sample = Self::find_sample_for_time_static(track, timestamp_us);
-                
+
                 if !track.sample_table.keyframes.is_empty() {
                     // Find nearest keyframe at or before target
                     let mut best_keyframe = 0usize;
@@ -926,7 +979,7 @@ pub mod mp4 {
 
         fn find_sample_for_time_static(track: &Track, timestamp_us: i64) -> usize {
             let target_time = timestamp_us * (track.timescale as i64) / 1_000_000;
-            
+
             let mut time = 0i64;
             let mut sample = 0usize;
 
@@ -955,14 +1008,11 @@ pub mod mp4 {
 // Public Rust API
 // ============================================================================
 
-
-
-
 pub fn demux_probe_file(path: String) -> Result<serde_json::Value, String> {
     use std::fs::File;
-    
+
     let file = File::open(&path).map_err(|e| format!("Open error: {}", e))?;
-    
+
     // Try MP4 first
     if let Ok(demuxer) = mp4::Mp4Demuxer::new(file) {
         let streams = demuxer.streams();
@@ -972,22 +1022,24 @@ pub fn demux_probe_file(path: String) -> Result<serde_json::Value, String> {
             "streams": streams,
         }));
     }
-    
+
     // TODO: Try MKV, AVI, TS
-    
+
     Err("Unknown format".to_string())
 }
 
-
 pub fn demux_get_streams(path: String) -> Result<Vec<serde_json::Value>, String> {
     use std::fs::File;
-    
+
     let file = File::open(&path).map_err(|e| format!("Open error: {}", e))?;
     let demuxer = mp4::Mp4Demuxer::new(file)?;
-    
-    Ok(demuxer.streams().into_iter().map(|s| serde_json::to_value(s).unwrap()).collect())
-}
 
+    Ok(demuxer
+        .streams()
+        .into_iter()
+        .map(|s| serde_json::to_value(s).unwrap())
+        .collect())
+}
 
 pub fn ffmpeg_minimal_description() -> String {
     r#"
@@ -1012,5 +1064,6 @@ WHAT'S NEEDED:
 NO SOFTWARE VIDEO DECODERS:
 We use hardware decoding for H.264/H.265/VP9/AV1.
 The GPU does the work, not the CPU.
-"#.to_string()
+"#
+    .to_string()
 }
