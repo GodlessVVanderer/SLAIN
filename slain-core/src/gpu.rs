@@ -1,5 +1,5 @@
 //! # GPU Hardware Abstraction
-//! 
+//!
 //! Unified interface for NVIDIA (NVAPI), AMD (ADL), and Intel (IGCL) GPUs.
 //! Used by:
 //! - Video player: Hardware decode capabilities, memory allocation
@@ -151,15 +151,15 @@ impl GpuManager {
             initialized: false,
         }
     }
-    
+
     /// Initialize GPU access (call once)
     pub fn init(&mut self) -> Result<(), GpuError> {
         if self.initialized {
             return Ok(());
         }
-        
+
         tracing::info!("Initializing GPU manager...");
-        
+
         // Try loading NVIDIA API
         match NvapiLoader::new() {
             Ok(nvapi) => {
@@ -170,7 +170,7 @@ impl GpuManager {
                 tracing::debug!("NVAPI not available: {}", e);
             }
         }
-        
+
         // Try loading AMD API
         match AdlLoader::new() {
             Ok(adl) => {
@@ -181,76 +181,81 @@ impl GpuManager {
                 tracing::debug!("ADL not available: {}", e);
             }
         }
-        
+
         // Enumerate devices
         self.enumerate_devices()?;
-        
+
         self.initialized = true;
         tracing::info!("Found {} GPU(s)", self.devices.len());
-        
+
         Ok(())
     }
-    
+
     /// Get all detected GPUs
     pub fn devices(&self) -> &[GpuDevice] {
         &self.devices
     }
-    
+
     /// Get primary GPU (first discrete, or first integrated)
     pub fn primary_gpu(&self) -> Option<&GpuDevice> {
         // Prefer discrete GPU
-        self.devices.iter()
+        self.devices
+            .iter()
             .find(|d| d.vendor == GpuVendor::Nvidia || d.vendor == GpuVendor::Amd)
             .or_else(|| self.devices.first())
     }
-    
+
     /// Get current GPU state (clocks, temps, usage)
     pub fn get_state(&self, device_index: u32) -> Result<GpuState, GpuError> {
-        let device = self.devices.get(device_index as usize)
+        let device = self
+            .devices
+            .get(device_index as usize)
             .ok_or(GpuError::NoGpu)?;
-        
+
         match device.vendor {
-            GpuVendor::Nvidia => {
-                self.nvapi.as_ref()
-                    .ok_or(GpuError::LibraryNotFound("nvapi64.dll".into()))?
-                    .get_state(device_index)
-            }
-            GpuVendor::Amd => {
-                self.adl.as_ref()
-                    .ok_or(GpuError::LibraryNotFound("atiadlxx.dll".into()))?
-                    .get_state(device_index)
-            }
+            GpuVendor::Nvidia => self
+                .nvapi
+                .as_ref()
+                .ok_or(GpuError::LibraryNotFound("nvapi64.dll".into()))?
+                .get_state(device_index),
+            GpuVendor::Amd => self
+                .adl
+                .as_ref()
+                .ok_or(GpuError::LibraryNotFound("atiadlxx.dll".into()))?
+                .get_state(device_index),
             _ => Err(GpuError::Unsupported {
                 vendor: device.vendor,
                 op: "get_state".into(),
             }),
         }
     }
-    
+
     /// Check if NVDEC is available
     pub fn has_nvdec(&self) -> bool {
-        self.devices.iter().any(|d| {
-            d.vendor == GpuVendor::Nvidia && d.capabilities.decode.h264
-        })
+        self.devices
+            .iter()
+            .any(|d| d.vendor == GpuVendor::Nvidia && d.capabilities.decode.h264)
     }
-    
+
     /// Check if AMD VCN is available  
     pub fn has_vcn(&self) -> bool {
-        self.devices.iter().any(|d| {
-            d.vendor == GpuVendor::Amd && d.capabilities.decode.h264
-        })
+        self.devices
+            .iter()
+            .any(|d| d.vendor == GpuVendor::Amd && d.capabilities.decode.h264)
     }
-    
+
     /// Check if CUDA is available
     pub fn has_cuda(&self) -> bool {
-        self.nvapi.is_some() && self.devices.iter().any(|d| {
-            d.vendor == GpuVendor::Nvidia && d.capabilities.cuda_cores.is_some()
-        })
+        self.nvapi.is_some()
+            && self
+                .devices
+                .iter()
+                .any(|d| d.vendor == GpuVendor::Nvidia && d.capabilities.cuda_cores.is_some())
     }
-    
+
     fn enumerate_devices(&mut self) -> Result<(), GpuError> {
         self.devices.clear();
-        
+
         // Get NVIDIA devices
         if let Some(ref nvapi) = self.nvapi {
             match nvapi.enumerate_devices() {
@@ -258,7 +263,7 @@ impl GpuManager {
                 Err(e) => tracing::warn!("Failed to enumerate NVIDIA GPUs: {}", e),
             }
         }
-        
+
         // Get AMD devices
         if let Some(ref adl) = self.adl {
             match adl.enumerate_devices() {
@@ -266,16 +271,16 @@ impl GpuManager {
                 Err(e) => tracing::warn!("Failed to enumerate AMD GPUs: {}", e),
             }
         }
-        
+
         // Assign indices
         for (i, device) in self.devices.iter_mut().enumerate() {
             device.index = i as u32;
         }
-        
+
         if self.devices.is_empty() {
             return Err(GpuError::NoGpu);
         }
-        
+
         Ok(())
     }
 }
@@ -308,7 +313,8 @@ type NvApiInit = unsafe extern "C" fn() -> NvApiStatus;
 type NvApiEnumGpus = unsafe extern "C" fn(*mut NvPhysicalGpuHandle, *mut u32) -> NvApiStatus;
 type NvApiGetName = unsafe extern "C" fn(NvPhysicalGpuHandle, *mut [u8; 64]) -> NvApiStatus;
 type NvApiGetVram = unsafe extern "C" fn(NvPhysicalGpuHandle, *mut NvMemoryInfo) -> NvApiStatus;
-type NvApiGetThermal = unsafe extern "C" fn(NvPhysicalGpuHandle, i32, *mut NvThermalSettings) -> NvApiStatus;
+type NvApiGetThermal =
+    unsafe extern "C" fn(NvPhysicalGpuHandle, i32, *mut NvThermalSettings) -> NvApiStatus;
 type NvApiGetClocks = unsafe extern "C" fn(NvPhysicalGpuHandle, *mut NvClocks) -> NvApiStatus;
 type NvApiGetUsage = unsafe extern "C" fn(NvPhysicalGpuHandle, *mut NvUsages) -> NvApiStatus;
 
@@ -362,8 +368,10 @@ struct NvUsages {
 fn nvapi_query_interface(offset: u32) -> *const std::ffi::c_void {
     // These offsets are stable for NVAPI
     // Found via reverse engineering / documentation
-    static INTERFACE: std::sync::OnceLock<Option<unsafe extern "C" fn(u32) -> *const std::ffi::c_void>> = std::sync::OnceLock::new();
-    
+    static INTERFACE: std::sync::OnceLock<
+        Option<unsafe extern "C" fn(u32) -> *const std::ffi::c_void>,
+    > = std::sync::OnceLock::new();
+
     if let Some(query) = INTERFACE.get() {
         if let Some(f) = query {
             return unsafe { f(offset) };
@@ -378,10 +386,10 @@ impl NvapiLoader {
         let lib_path = "nvapi64.dll";
         #[cfg(not(windows))]
         let lib_path = "libnvidia-api.so";
-        
+
         let lib = unsafe { Library::new(lib_path) }
             .map_err(|_| GpuError::LibraryNotFound(lib_path.into()))?;
-        
+
         // NVAPI uses a query interface pattern
         // Get nvapi_QueryInterface first
         let query_fn: Option<unsafe extern "C" fn(u32) -> *const std::ffi::c_void> = unsafe {
@@ -389,60 +397,93 @@ impl NvapiLoader {
                 .ok()
                 .map(|f| *f)
         };
-        
+
         if query_fn.is_none() {
-            return Err(GpuError::InitializationFailed("nvapi_QueryInterface not found".into()));
+            return Err(GpuError::InitializationFailed(
+                "nvapi_QueryInterface not found".into(),
+            ));
         }
-        
+
         let query = query_fn.unwrap();
-        
+
         // Query function pointers by ID
         // These IDs are from NVAPI documentation/headers
         let nv_init: Option<NvApiInit> = unsafe {
             let ptr = query(0x0150E828); // NvAPI_Initialize
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_enum_gpus: Option<NvApiEnumGpus> = unsafe {
             let ptr = query(0xE5AC921F); // NvAPI_EnumPhysicalGPUs
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_get_name: Option<NvApiGetName> = unsafe {
             let ptr = query(0xCEEE8E9F); // NvAPI_GPU_GetFullName
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_get_vram: Option<NvApiGetVram> = unsafe {
             let ptr = query(0x774AA982); // NvAPI_GPU_GetMemoryInfo
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_get_thermal: Option<NvApiGetThermal> = unsafe {
             let ptr = query(0xE3640A56); // NvAPI_GPU_GetThermalSettings
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_get_clocks: Option<NvApiGetClocks> = unsafe {
             let ptr = query(0xDCB616C3); // NvAPI_GPU_GetAllClockFrequencies
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         let nv_get_usage: Option<NvApiGetUsage> = unsafe {
             let ptr = query(0x189A1FDF); // NvAPI_GPU_GetUsages
-            if ptr.is_null() { None } else { Some(std::mem::transmute(ptr)) }
+            if ptr.is_null() {
+                None
+            } else {
+                Some(std::mem::transmute(ptr))
+            }
         };
-        
+
         // Initialize NVAPI
         if let Some(init) = nv_init {
             let status = unsafe { init() };
             if status != NVAPI_OK {
-                return Err(GpuError::InitializationFailed(format!("NvAPI_Initialize failed: {}", status)));
+                return Err(GpuError::InitializationFailed(format!(
+                    "NvAPI_Initialize failed: {}",
+                    status
+                )));
             }
         }
-        
-        Ok(Self { 
-            lib, 
+
+        Ok(Self {
+            lib,
             nv_init,
             nv_enum_gpus,
             nv_get_name,
@@ -452,27 +493,32 @@ impl NvapiLoader {
             nv_get_usage,
         })
     }
-    
+
     fn enumerate_devices(&self) -> Result<Vec<GpuDevice>, GpuError> {
-        let enum_fn = self.nv_enum_gpus
+        let enum_fn = self
+            .nv_enum_gpus
             .ok_or_else(|| GpuError::ApiError("NvAPI_EnumPhysicalGPUs not available".into()))?;
-        
-        let mut handles: [NvPhysicalGpuHandle; NVAPI_MAX_PHYSICAL_GPUS] = [std::ptr::null_mut(); NVAPI_MAX_PHYSICAL_GPUS];
+
+        let mut handles: [NvPhysicalGpuHandle; NVAPI_MAX_PHYSICAL_GPUS] =
+            [std::ptr::null_mut(); NVAPI_MAX_PHYSICAL_GPUS];
         let mut count: u32 = 0;
-        
+
         let status = unsafe { enum_fn(handles.as_mut_ptr(), &mut count) };
         if status != NVAPI_OK {
-            return Err(GpuError::ApiError(format!("EnumPhysicalGPUs failed: {}", status)));
+            return Err(GpuError::ApiError(format!(
+                "EnumPhysicalGPUs failed: {}",
+                status
+            )));
         }
-        
+
         let mut devices = Vec::new();
-        
+
         for i in 0..count as usize {
             let handle = handles[i];
             if handle.is_null() {
                 continue;
             }
-            
+
             // Get GPU name
             let mut name_buf = [0u8; 64];
             let name = if let Some(get_name) = self.nv_get_name {
@@ -486,7 +532,7 @@ impl NvapiLoader {
             } else {
                 format!("NVIDIA GPU {}", i)
             };
-            
+
             // Get VRAM
             let vram_mb = if let Some(get_vram) = self.nv_get_vram {
                 let mut mem_info = NvMemoryInfo {
@@ -506,7 +552,7 @@ impl NvapiLoader {
             } else {
                 0
             };
-            
+
             devices.push(GpuDevice {
                 index: i as u32,
                 name,
@@ -538,29 +584,31 @@ impl NvapiLoader {
                 },
             });
         }
-        
+
         if devices.is_empty() {
             return Err(GpuError::NoDevicesFound);
         }
-        
+
         Ok(devices)
     }
-    
+
     fn get_state(&self, device_index: u32) -> Result<GpuState, GpuError> {
         // First enumerate to get handle
-        let enum_fn = self.nv_enum_gpus
+        let enum_fn = self
+            .nv_enum_gpus
             .ok_or_else(|| GpuError::ApiError("NvAPI_EnumPhysicalGPUs not available".into()))?;
-        
-        let mut handles: [NvPhysicalGpuHandle; NVAPI_MAX_PHYSICAL_GPUS] = [std::ptr::null_mut(); NVAPI_MAX_PHYSICAL_GPUS];
+
+        let mut handles: [NvPhysicalGpuHandle; NVAPI_MAX_PHYSICAL_GPUS] =
+            [std::ptr::null_mut(); NVAPI_MAX_PHYSICAL_GPUS];
         let mut count: u32 = 0;
-        
+
         let status = unsafe { enum_fn(handles.as_mut_ptr(), &mut count) };
         if status != NVAPI_OK || device_index >= count {
             return Err(GpuError::DeviceNotFound(device_index as usize));
         }
-        
+
         let handle = handles[device_index as usize];
-        
+
         // Get temperature
         let temperature = if let Some(get_thermal) = self.nv_get_thermal {
             let mut thermal = NvThermalSettings {
@@ -577,7 +625,7 @@ impl NvapiLoader {
         } else {
             0
         };
-        
+
         // Get clocks
         let (gpu_clock, mem_clock) = if let Some(get_clocks) = self.nv_get_clocks {
             let mut clocks = NvClocks {
@@ -587,8 +635,16 @@ impl NvapiLoader {
             let status = unsafe { get_clocks(handle, &mut clocks) };
             if status == NVAPI_OK {
                 // Index 0 = graphics, index 8 = memory typically
-                let gpu = if clocks.clocks[0].present != 0 { clocks.clocks[0].freq_khz / 1000 } else { 0 };
-                let mem = if clocks.clocks[8].present != 0 { clocks.clocks[8].freq_khz / 1000 } else { 0 };
+                let gpu = if clocks.clocks[0].present != 0 {
+                    clocks.clocks[0].freq_khz / 1000
+                } else {
+                    0
+                };
+                let mem = if clocks.clocks[8].present != 0 {
+                    clocks.clocks[8].freq_khz / 1000
+                } else {
+                    0
+                };
                 (gpu, mem)
             } else {
                 (0, 0)
@@ -596,7 +652,7 @@ impl NvapiLoader {
         } else {
             (0, 0)
         };
-        
+
         // Get usage
         let gpu_usage = if let Some(get_usage) = self.nv_get_usage {
             let mut usages = NvUsages {
@@ -612,7 +668,7 @@ impl NvapiLoader {
         } else {
             0
         };
-        
+
         // Get VRAM
         let (vram_used, vram_free) = if let Some(get_vram) = self.nv_get_vram {
             let mut mem_info = NvMemoryInfo {
@@ -634,7 +690,7 @@ impl NvapiLoader {
         } else {
             (0, 0)
         };
-        
+
         Ok(GpuState {
             gpu_clock_mhz: gpu_clock,
             mem_clock_mhz: mem_clock,
@@ -750,18 +806,25 @@ struct AdlLoader {
     adl_main_control_create: unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus,
     adl_main_control_destroy: unsafe extern "C" fn() -> AdlStatus,
     adl_adapter_number_of_adapters_get: unsafe extern "C" fn(*mut i32) -> AdlStatus,
-    adl_adapter_adapter_info_get: Option<unsafe extern "C" fn(*mut AdlAdapterInfo, i32) -> AdlStatus>,
+    adl_adapter_adapter_info_get:
+        Option<unsafe extern "C" fn(*mut AdlAdapterInfo, i32) -> AdlStatus>,
     adl_adapter_active_get: Option<unsafe extern "C" fn(i32, *mut i32) -> AdlStatus>,
-    adl_overdrive5_temperature_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlTemperature) -> AdlStatus>,
-    adl_overdrive5_fanspeed_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlFanSpeedValue) -> AdlStatus>,
-    adl_overdrive5_currentactivity_get: Option<unsafe extern "C" fn(i32, *mut AdlPmActivity) -> AdlStatus>,
+    adl_overdrive5_temperature_get:
+        Option<unsafe extern "C" fn(i32, i32, *mut AdlTemperature) -> AdlStatus>,
+    adl_overdrive5_fanspeed_get:
+        Option<unsafe extern "C" fn(i32, i32, *mut AdlFanSpeedValue) -> AdlStatus>,
+    adl_overdrive5_currentactivity_get:
+        Option<unsafe extern "C" fn(i32, *mut AdlPmActivity) -> AdlStatus>,
     adl_adapter_memoryinfo_get: Option<unsafe extern "C" fn(i32, *mut AdlMemoryInfo) -> AdlStatus>,
 }
 
 // Memory allocation callback for ADL
 extern "C" fn adl_mem_alloc(size: i32) -> *mut std::ffi::c_void {
     unsafe {
-        std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(size as usize, 8)) as *mut _
+        std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
+            size as usize,
+            8,
+        )) as *mut _
     }
 }
 
@@ -771,47 +834,73 @@ impl AdlLoader {
         let lib_path = "atiadlxx.dll";
         #[cfg(not(windows))]
         let lib_path = "libatiadlxx.so";
-        
+
         let lib = unsafe { Library::new(lib_path) }
             .map_err(|_| GpuError::LibraryNotFound(lib_path.into()))?;
 
         unsafe {
             // Required functions - get and immediately dereference to copy the function pointer
-            let adl_main_control_create: unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus =
-                *lib.get::<unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus>(b"ADL_Main_Control_Create")
-                    .map_err(|_| GpuError::InitializationFailed("ADL_Main_Control_Create not found".into()))?;
+            let adl_main_control_create: unsafe extern "C" fn(
+                AdlMainMemoryAlloc,
+                i32,
+            ) -> AdlStatus = *lib
+                .get::<unsafe extern "C" fn(AdlMainMemoryAlloc, i32) -> AdlStatus>(
+                    b"ADL_Main_Control_Create",
+                )
+                .map_err(|_| {
+                    GpuError::InitializationFailed("ADL_Main_Control_Create not found".into())
+                })?;
 
-            let adl_main_control_destroy: unsafe extern "C" fn() -> AdlStatus =
-                *lib.get::<unsafe extern "C" fn() -> AdlStatus>(b"ADL_Main_Control_Destroy")
-                    .map_err(|_| GpuError::InitializationFailed("ADL_Main_Control_Destroy not found".into()))?;
+            let adl_main_control_destroy: unsafe extern "C" fn() -> AdlStatus = *lib
+                .get::<unsafe extern "C" fn() -> AdlStatus>(b"ADL_Main_Control_Destroy")
+                .map_err(|_| {
+                    GpuError::InitializationFailed("ADL_Main_Control_Destroy not found".into())
+                })?;
 
             let adl_adapter_number_of_adapters_get: unsafe extern "C" fn(*mut i32) -> AdlStatus =
-                *lib.get::<unsafe extern "C" fn(*mut i32) -> AdlStatus>(b"ADL_Adapter_NumberOfAdapters_Get")
-                    .map_err(|_| GpuError::InitializationFailed("ADL_Adapter_NumberOfAdapters_Get not found".into()))?;
+                *lib.get::<unsafe extern "C" fn(*mut i32) -> AdlStatus>(
+                    b"ADL_Adapter_NumberOfAdapters_Get",
+                )
+                .map_err(|_| {
+                    GpuError::InitializationFailed(
+                        "ADL_Adapter_NumberOfAdapters_Get not found".into(),
+                    )
+                })?;
 
             // Optional functions
-            let adl_adapter_adapter_info_get: Option<unsafe extern "C" fn(*mut AdlAdapterInfo, i32) -> AdlStatus> =
-                lib.get(b"ADL_Adapter_AdapterInfo_Get").ok().map(|f| *f);
+            let adl_adapter_adapter_info_get: Option<
+                unsafe extern "C" fn(*mut AdlAdapterInfo, i32) -> AdlStatus,
+            > = lib.get(b"ADL_Adapter_AdapterInfo_Get").ok().map(|f| *f);
 
             let adl_adapter_active_get: Option<unsafe extern "C" fn(i32, *mut i32) -> AdlStatus> =
                 lib.get(b"ADL_Adapter_Active_Get").ok().map(|f| *f);
 
-            let adl_overdrive5_temperature_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlTemperature) -> AdlStatus> =
-                lib.get(b"ADL_Overdrive5_Temperature_Get").ok().map(|f| *f);
+            let adl_overdrive5_temperature_get: Option<
+                unsafe extern "C" fn(i32, i32, *mut AdlTemperature) -> AdlStatus,
+            > = lib.get(b"ADL_Overdrive5_Temperature_Get").ok().map(|f| *f);
 
-            let adl_overdrive5_fanspeed_get: Option<unsafe extern "C" fn(i32, i32, *mut AdlFanSpeedValue) -> AdlStatus> =
-                lib.get(b"ADL_Overdrive5_FanSpeed_Get").ok().map(|f| *f);
+            let adl_overdrive5_fanspeed_get: Option<
+                unsafe extern "C" fn(i32, i32, *mut AdlFanSpeedValue) -> AdlStatus,
+            > = lib.get(b"ADL_Overdrive5_FanSpeed_Get").ok().map(|f| *f);
 
-            let adl_overdrive5_currentactivity_get: Option<unsafe extern "C" fn(i32, *mut AdlPmActivity) -> AdlStatus> =
-                lib.get(b"ADL_Overdrive5_CurrentActivity_Get").ok().map(|f| *f);
+            let adl_overdrive5_currentactivity_get: Option<
+                unsafe extern "C" fn(i32, *mut AdlPmActivity) -> AdlStatus,
+            > = lib
+                .get(b"ADL_Overdrive5_CurrentActivity_Get")
+                .ok()
+                .map(|f| *f);
 
-            let adl_adapter_memoryinfo_get: Option<unsafe extern "C" fn(i32, *mut AdlMemoryInfo) -> AdlStatus> =
-                lib.get(b"ADL_Adapter_MemoryInfo_Get").ok().map(|f| *f);
+            let adl_adapter_memoryinfo_get: Option<
+                unsafe extern "C" fn(i32, *mut AdlMemoryInfo) -> AdlStatus,
+            > = lib.get(b"ADL_Adapter_MemoryInfo_Get").ok().map(|f| *f);
 
             // Initialize ADL
             let status = adl_main_control_create(adl_mem_alloc, 1);
             if status != ADL_OK {
-                return Err(GpuError::InitializationFailed(format!("ADL_Main_Control_Create failed: {}", status)));
+                return Err(GpuError::InitializationFailed(format!(
+                    "ADL_Main_Control_Create failed: {}",
+                    status
+                )));
             }
 
             Ok(Self {
@@ -828,7 +917,7 @@ impl AdlLoader {
             })
         }
     }
-    
+
     fn enumerate_devices(&self) -> Result<Vec<GpuDevice>, GpuError> {
         unsafe {
             let mut num_adapters: i32 = 0;
@@ -836,29 +925,33 @@ impl AdlLoader {
             if status != ADL_OK || num_adapters <= 0 {
                 return Err(GpuError::NoDevicesFound);
             }
-            
-            let get_info = self.adl_adapter_adapter_info_get
-                .ok_or_else(|| GpuError::ApiError("ADL_Adapter_AdapterInfo_Get not available".into()))?;
-            
+
+            let get_info = self.adl_adapter_adapter_info_get.ok_or_else(|| {
+                GpuError::ApiError("ADL_Adapter_AdapterInfo_Get not available".into())
+            })?;
+
             let mut adapter_info = vec![AdlAdapterInfo::default(); num_adapters as usize];
             let status = get_info(
                 adapter_info.as_mut_ptr(),
-                std::mem::size_of::<AdlAdapterInfo>() as i32 * num_adapters
+                std::mem::size_of::<AdlAdapterInfo>() as i32 * num_adapters,
             );
-            
+
             if status != ADL_OK {
-                return Err(GpuError::ApiError(format!("ADL_Adapter_AdapterInfo_Get failed: {}", status)));
+                return Err(GpuError::ApiError(format!(
+                    "ADL_Adapter_AdapterInfo_Get failed: {}",
+                    status
+                )));
             }
-            
+
             let mut devices = Vec::new();
             let mut seen_adapters = std::collections::HashSet::new();
-            
+
             for info in adapter_info.iter() {
                 // Skip inactive adapters
                 if info.present == 0 {
                     continue;
                 }
-                
+
                 // Check if active
                 if let Some(active_get) = self.adl_adapter_active_get {
                     let mut active: i32 = 0;
@@ -866,18 +959,25 @@ impl AdlLoader {
                         continue;
                     }
                 }
-                
+
                 // Skip duplicate adapters (same UDID)
-                let udid = String::from_utf8_lossy(&info.strUDID[..info.strUDID.iter().position(|&c| c == 0).unwrap_or(256)]).to_string();
+                let udid = String::from_utf8_lossy(
+                    &info.strUDID[..info.strUDID.iter().position(|&c| c == 0).unwrap_or(256)],
+                )
+                .to_string();
                 if seen_adapters.contains(&udid) {
                     continue;
                 }
                 seen_adapters.insert(udid);
-                
+
                 // Get adapter name
-                let name_len = info.adapter_name.iter().position(|&c| c == 0).unwrap_or(256);
+                let name_len = info
+                    .adapter_name
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(256);
                 let name = String::from_utf8_lossy(&info.adapter_name[..name_len]).to_string();
-                
+
                 // Get VRAM
                 let vram_mb = if let Some(mem_get) = self.adl_adapter_memoryinfo_get {
                     let mut mem_info = AdlMemoryInfo {
@@ -894,7 +994,7 @@ impl AdlLoader {
                 } else {
                     0
                 };
-                
+
                 devices.push(GpuDevice {
                     index: info.adapter_index as u32,
                     name,
@@ -926,18 +1026,18 @@ impl AdlLoader {
                     },
                 });
             }
-            
+
             if devices.is_empty() {
                 return Err(GpuError::NoDevicesFound);
             }
-            
+
             Ok(devices)
         }
     }
-    
+
     fn get_state(&self, device_index: u32) -> Result<GpuState, GpuError> {
         let adapter_index = device_index as i32;
-        
+
         // Get temperature
         let temperature = if let Some(temp_get) = self.adl_overdrive5_temperature_get {
             let mut temp = AdlTemperature {
@@ -952,7 +1052,7 @@ impl AdlLoader {
         } else {
             0
         };
-        
+
         // Get fan speed
         let fan_speed = if let Some(fan_get) = self.adl_overdrive5_fanspeed_get {
             let mut fan = AdlFanSpeedValue {
@@ -969,34 +1069,35 @@ impl AdlLoader {
         } else {
             None
         };
-        
+
         // Get activity (clocks, usage)
-        let (gpu_clock, mem_clock, gpu_usage) = if let Some(activity_get) = self.adl_overdrive5_currentactivity_get {
-            let mut activity = AdlPmActivity {
-                size: std::mem::size_of::<AdlPmActivity>() as i32,
-                engine_clock: 0,
-                memory_clock: 0,
-                vddc: 0,
-                activity_percent: 0,
-                current_performance_level: 0,
-                current_bus_speed: 0,
-                current_bus_lanes: 0,
-                max_bus_lanes: 0,
-                reserved: 0,
-            };
-            if unsafe { activity_get(adapter_index, &mut activity) } == ADL_OK {
-                (
-                    (activity.engine_clock / 100) as u32,  // Convert from 10kHz to MHz
-                    (activity.memory_clock / 100) as u32,
-                    activity.activity_percent as u32
-                )
+        let (gpu_clock, mem_clock, gpu_usage) =
+            if let Some(activity_get) = self.adl_overdrive5_currentactivity_get {
+                let mut activity = AdlPmActivity {
+                    size: std::mem::size_of::<AdlPmActivity>() as i32,
+                    engine_clock: 0,
+                    memory_clock: 0,
+                    vddc: 0,
+                    activity_percent: 0,
+                    current_performance_level: 0,
+                    current_bus_speed: 0,
+                    current_bus_lanes: 0,
+                    max_bus_lanes: 0,
+                    reserved: 0,
+                };
+                if unsafe { activity_get(adapter_index, &mut activity) } == ADL_OK {
+                    (
+                        (activity.engine_clock / 100) as u32, // Convert from 10kHz to MHz
+                        (activity.memory_clock / 100) as u32,
+                        activity.activity_percent as u32,
+                    )
+                } else {
+                    (0, 0, 0)
+                }
             } else {
                 (0, 0, 0)
-            }
-        } else {
-            (0, 0, 0)
-        };
-        
+            };
+
         // Get VRAM
         let (vram_used, vram_free) = if let Some(mem_get) = self.adl_adapter_memoryinfo_get {
             let mut mem_info = AdlMemoryInfo {
@@ -1016,7 +1117,7 @@ impl AdlLoader {
         } else {
             (0, 0)
         };
-        
+
         Ok(GpuState {
             gpu_clock_mhz: gpu_clock,
             mem_clock_mhz: mem_clock,
@@ -1047,7 +1148,7 @@ impl Drop for AdlLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_vendor_from_pci() {
         assert_eq!(GpuVendor::from_pci_vendor(0x10DE), GpuVendor::Nvidia);

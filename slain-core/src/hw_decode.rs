@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Import real decoder implementations
-use crate::nvdec::{self, NvdecDecoder, VideoCodec as NvdecCodec, DecodedFrame as NvdecFrame, FrameFormat};
-use crate::amf_decode::{self, AmfDecoder, AmfCodec};
-use crate::vaapi_decode::{self, VaapiDecoder, VaapiCodec};
+use crate::amf_decode::{self, AmfCodec, AmfDecoder};
+use crate::nvdec::{
+    self, DecodedFrame as NvdecFrame, FrameFormat, NvdecDecoder, VideoCodec as NvdecCodec,
+};
+use crate::vaapi_decode::{self, VaapiCodec, VaapiDecoder};
 
 // ============================================================================
 // Unified Types
@@ -46,7 +48,7 @@ impl HwCodec {
             Self::VC1 => None, // NVDEC doesn't support VC1 on modern cards
         }
     }
-    
+
     /// Convert to AMF codec type
     pub fn to_amf(&self) -> Option<AmfCodec> {
         match self {
@@ -57,7 +59,7 @@ impl HwCodec {
             _ => None, // AMF doesn't support VP8, MPEG2, VC1
         }
     }
-    
+
     /// Convert to VAAPI codec type
     pub fn to_vaapi(&self) -> Option<VaapiCodec> {
         match self {
@@ -70,7 +72,7 @@ impl HwCodec {
             Self::VC1 => Some(VaapiCodec::VC1),
         }
     }
-    
+
     /// Parse from string (fourcc or name)
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
@@ -89,10 +91,10 @@ impl HwCodec {
 /// Decoder backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HwDecoderType {
-    Nvdec,      // NVIDIA GPU (Windows/Linux)
-    Amf,        // AMD GPU (Windows only)
-    Vaapi,      // VA-API (Linux - Intel/AMD/NVIDIA)
-    Software,   // CPU fallback
+    Nvdec,    // NVIDIA GPU (Windows/Linux)
+    Amf,      // AMD GPU (Windows only)
+    Vaapi,    // VA-API (Linux - Intel/AMD/NVIDIA)
+    Software, // CPU fallback
 }
 
 impl HwDecoderType {
@@ -105,17 +107,17 @@ impl HwDecoderType {
             Self::Software => true,
         }
     }
-    
+
     /// Get priority (lower = better)
     pub fn priority(&self) -> u32 {
         match self {
-            Self::Nvdec => 1,   // Fastest, best quality
-            Self::Amf => 2,    // AMD GPUs
-            Self::Vaapi => 3,  // Linux universal
+            Self::Nvdec => 1,     // Fastest, best quality
+            Self::Amf => 2,       // AMD GPUs
+            Self::Vaapi => 3,     // Linux universal
             Self::Software => 99, // Last resort
         }
     }
-    
+
     /// Get display name
     pub fn name(&self) -> &'static str {
         match self {
@@ -226,14 +228,14 @@ impl HwDecoder {
                 return Ok(decoder);
             }
         }
-        
+
         // Try backends in priority order
         let backends = [
             HwDecoderType::Nvdec,
             HwDecoderType::Amf,
             HwDecoderType::Vaapi,
         ];
-        
+
         for backend in backends {
             if backend.is_available() {
                 if let Ok(decoder) = Self::create_with_backend(&config, backend) {
@@ -241,50 +243,49 @@ impl HwDecoder {
                 }
             }
         }
-        
+
         // Fall back to software if allowed
         if config.allow_software_fallback {
             return Ok(Self::Software(SoftwareDecoder::new(config)?));
         }
-        
+
         Err("No suitable hardware decoder available".to_string())
     }
-    
+
     /// Create decoder with specific backend
     fn create_with_backend(config: &DecoderConfig, backend: HwDecoderType) -> Result<Self, String> {
         match backend {
             HwDecoderType::Nvdec => {
-                let codec = config.codec.to_nvdec()
+                let codec = config
+                    .codec
+                    .to_nvdec()
                     .ok_or("Codec not supported by NVDEC")?;
                 let decoder = NvdecDecoder::new(codec, config.width, config.height)?;
                 Ok(Self::Nvdec(decoder))
             }
             HwDecoderType::Amf => {
-                let codec = config.codec.to_amf()
-                    .ok_or("Codec not supported by AMF")?;
+                let codec = config.codec.to_amf().ok_or("Codec not supported by AMF")?;
                 let decoder = AmfDecoder::new(codec, config.width, config.height)?;
                 Ok(Self::Amf(decoder))
             }
             HwDecoderType::Vaapi => {
-                let codec = config.codec.to_vaapi()
+                let codec = config
+                    .codec
+                    .to_vaapi()
                     .ok_or("Codec not supported by VAAPI")?;
                 let decoder = VaapiDecoder::new(codec, config.width, config.height)?;
                 Ok(Self::Vaapi(decoder))
             }
-            HwDecoderType::Software => {
-                Ok(Self::Software(SoftwareDecoder::new(config.clone())?))
-            }
+            HwDecoderType::Software => Ok(Self::Software(SoftwareDecoder::new(config.clone())?)),
         }
     }
-    
+
     /// Decode a compressed packet
     pub fn decode(&mut self, data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
         match self {
-            Self::Nvdec(d) => {
-                d.decode(data, pts).map(|opt| opt.map(|f| f.into()))
-            }
-            Self::Amf(d) => {
-                d.decode(data, pts).map(|opt| opt.map(|f| DecodedFrame {
+            Self::Nvdec(d) => d.decode(data, pts).map(|opt| opt.map(|f| f.into())),
+            Self::Amf(d) => d.decode(data, pts).map(|opt| {
+                opt.map(|f| DecodedFrame {
                     pts: f.pts,
                     width: f.width,
                     height: f.height,
@@ -295,10 +296,10 @@ impl HwDecoder {
                     },
                     data: f.data,
                     progressive: f.progressive,
-                }))
-            }
-            Self::Vaapi(d) => {
-                d.decode(data, pts).map(|opt| opt.map(|f| DecodedFrame {
+                })
+            }),
+            Self::Vaapi(d) => d.decode(data, pts).map(|opt| {
+                opt.map(|f| DecodedFrame {
                     pts: f.pts,
                     width: f.width,
                     height: f.height,
@@ -309,44 +310,52 @@ impl HwDecoder {
                     },
                     data: f.data,
                     progressive: f.progressive,
-                }))
-            }
+                })
+            }),
             Self::Software(d) => d.decode(data, pts),
         }
     }
-    
+
     /// Flush decoder and get remaining frames
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
         match self {
             Self::Nvdec(d) => d.flush().into_iter().map(|f| f.into()).collect(),
-            Self::Amf(d) => d.flush().into_iter().map(|f| DecodedFrame {
-                pts: f.pts,
-                width: f.width,
-                height: f.height,
-                pitch: f.pitch,
-                format: match f.format.as_str() {
-                    "P010" => PixelFormat::P010,
-                    _ => PixelFormat::NV12,
-                },
-                data: f.data,
-                progressive: f.progressive,
-            }).collect(),
-            Self::Vaapi(d) => d.flush().into_iter().map(|f| DecodedFrame {
-                pts: f.pts,
-                width: f.width,
-                height: f.height,
-                pitch: f.pitch,
-                format: match f.format.as_str() {
-                    "P010" => PixelFormat::P010,
-                    _ => PixelFormat::NV12,
-                },
-                data: f.data,
-                progressive: f.progressive,
-            }).collect(),
+            Self::Amf(d) => d
+                .flush()
+                .into_iter()
+                .map(|f| DecodedFrame {
+                    pts: f.pts,
+                    width: f.width,
+                    height: f.height,
+                    pitch: f.pitch,
+                    format: match f.format.as_str() {
+                        "P010" => PixelFormat::P010,
+                        _ => PixelFormat::NV12,
+                    },
+                    data: f.data,
+                    progressive: f.progressive,
+                })
+                .collect(),
+            Self::Vaapi(d) => d
+                .flush()
+                .into_iter()
+                .map(|f| DecodedFrame {
+                    pts: f.pts,
+                    width: f.width,
+                    height: f.height,
+                    pitch: f.pitch,
+                    format: match f.format.as_str() {
+                        "P010" => PixelFormat::P010,
+                        _ => PixelFormat::NV12,
+                    },
+                    data: f.data,
+                    progressive: f.progressive,
+                })
+                .collect(),
             Self::Software(d) => d.flush(),
         }
     }
-    
+
     /// Get decoder info
     pub fn info(&self) -> DecoderInfo {
         match self {
@@ -386,7 +395,7 @@ impl HwDecoder {
             Self::Software(d) => d.info().clone(),
         }
     }
-    
+
     /// Get backend type
     pub fn backend(&self) -> HwDecoderType {
         match self {
@@ -427,10 +436,13 @@ impl SoftwareDecoder {
                 }
             }
         } else {
-            tracing::warn!("Software decoder only supports H.264, got {:?}", config.codec);
+            tracing::warn!(
+                "Software decoder only supports H.264, got {:?}",
+                config.codec
+            );
             None
         };
-        
+
         Ok(Self {
             width: config.width,
             height: config.height,
@@ -438,18 +450,14 @@ impl SoftwareDecoder {
             h264_decoder,
         })
     }
-    
+
     /// Decode compressed H.264 NAL units into YUV420 frames
-    pub fn decode(
-        &mut self,
-        data: &[u8],
-        pts: i64,
-    ) -> Result<Option<DecodedFrame>, String> {
+    pub fn decode(&mut self, data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
         let decoder = match &mut self.h264_decoder {
             Some(d) => d,
             None => return Err("No H.264 decoder available".to_string()),
         };
-        
+
         // Decode the NAL unit
         let yuv = match decoder.decode(data) {
             Ok(Some(yuv)) => yuv,
@@ -463,23 +471,23 @@ impl SoftwareDecoder {
                 return Ok(None);
             }
         };
-        
+
         // Get dimensions from decoded frame
         let (width, height) = yuv.dimensions();
         self.width = width as u32;
         self.height = height as u32;
-        
+
         // Get YUV plane data - OpenH264 returns packed data
         let y_data = yuv.y();
         let u_data = yuv.u();
         let v_data = yuv.v();
-        
+
         // Build YUV420 planar buffer
         let mut yuv_data = Vec::with_capacity(y_data.len() + u_data.len() + v_data.len());
         yuv_data.extend_from_slice(y_data);
         yuv_data.extend_from_slice(u_data);
         yuv_data.extend_from_slice(v_data);
-        
+
         Ok(Some(DecodedFrame {
             pts,
             width: self.width,
@@ -490,12 +498,12 @@ impl SoftwareDecoder {
             progressive: true,
         }))
     }
-    
+
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
         // OpenH264 doesn't have explicit flush, frames come out immediately
         Vec::new()
     }
-    
+
     pub fn info(&self) -> DecoderInfo {
         DecoderInfo {
             backend: HwDecoderType::Software,
@@ -508,7 +516,6 @@ impl SoftwareDecoder {
     }
 }
 
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -520,8 +527,9 @@ pub fn find_best_decoder(codec: HwCodec) -> Option<HwDecoderType> {
         HwDecoderType::Amf,
         HwDecoderType::Vaapi,
     ];
-    
-    backends.into_iter()
+
+    backends
+        .into_iter()
         .filter(|b| b.is_available())
         .filter(|b| match b {
             HwDecoderType::Nvdec => codec.to_nvdec().is_some(),
@@ -539,39 +547,37 @@ pub fn available_decoders() -> Vec<HwDecoderType> {
         HwDecoderType::Amf,
         HwDecoderType::Vaapi,
         HwDecoderType::Software,
-    ].into_iter()
-        .filter(|d| d.is_available())
-        .collect()
+    ]
+    .into_iter()
+    .filter(|d| d.is_available())
+    .collect()
 }
 
 /// Get decoder capabilities summary
 pub fn decoder_capabilities() -> HashMap<String, serde_json::Value> {
     let mut caps = HashMap::new();
-    
+
     // NVDEC
     if nvdec::nvdec_check_available() {
         caps.insert("nvdec".to_string(), nvdec::nvdec_get_capabilities());
     }
-    
+
     // AMF
     if amf_decode::amf_check_available() {
         caps.insert("amf".to_string(), amf_decode::amf_get_capabilities());
     }
-    
+
     // VAAPI
     if vaapi_decode::vaapi_check_available() {
         caps.insert("vaapi".to_string(), vaapi_decode::vaapi_get_capabilities());
     }
-    
+
     caps
 }
 
 // ============================================================================
 // Public Rust API
 // ============================================================================
-
-
-
 
 pub fn hwdec_available_decoders() -> Vec<String> {
     available_decoders()
@@ -580,32 +586,26 @@ pub fn hwdec_available_decoders() -> Vec<String> {
         .collect()
 }
 
-
 pub fn hwdec_best_for_codec(codec: String) -> Option<String> {
     let hc = HwCodec::from_str(&codec)?;
     find_best_decoder(hc).map(|d| d.name().to_string())
 }
 
-
 pub fn hwdec_capabilities() -> serde_json::Value {
     serde_json::json!(decoder_capabilities())
 }
-
 
 pub fn hwdec_check_nvidia() -> bool {
     nvdec::nvdec_check_available()
 }
 
-
 pub fn hwdec_check_amd() -> bool {
     amf_decode::amf_check_available()
 }
 
-
 pub fn hwdec_check_vaapi() -> bool {
     vaapi_decode::vaapi_check_available()
 }
-
 
 pub fn hwdec_check_intel() -> bool {
     // Intel uses VAAPI on Linux, or QuickSync on Windows (not implemented)
@@ -618,7 +618,6 @@ pub fn hwdec_check_intel() -> bool {
         false // Intel QuickSync not implemented for Windows yet
     }
 }
-
 
 pub fn hwdec_system_info() -> serde_json::Value {
     serde_json::json!({
@@ -638,7 +637,6 @@ pub fn hwdec_system_info() -> serde_json::Value {
         "supported_codecs": ["H264", "H265", "VP8", "VP9", "AV1", "MPEG2"],
     })
 }
-
 
 pub fn hwdec_description() -> String {
     r#"
@@ -671,7 +669,8 @@ USAGE:
 AUTOMATIC SELECTION:
 The decoder automatically picks the best available backend.
 Priority: NVDEC > AMF > VAAPI > Software
-"#.to_string()
+"#
+    .to_string()
 }
 
 // ============================================================================
@@ -681,7 +680,7 @@ Priority: NVDEC > AMF > VAAPI > Software
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_codec_parsing() {
         assert_eq!(HwCodec::from_str("h264"), Some(HwCodec::H264));
@@ -689,7 +688,7 @@ mod tests {
         assert_eq!(HwCodec::from_str("av01"), Some(HwCodec::AV1));
         assert_eq!(HwCodec::from_str("unknown"), None);
     }
-    
+
     #[test]
     fn test_backend_priority() {
         assert!(HwDecoderType::Nvdec.priority() < HwDecoderType::Software.priority());

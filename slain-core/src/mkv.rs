@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use matroska_demuxer::{MatroskaFile, Frame, TrackType, TrackEntry};
+use matroska_demuxer::{Frame, MatroskaFile, TrackEntry, TrackType};
 
 // ============================================================================
 // Data Types
@@ -272,29 +272,29 @@ impl MkvParser {
 
     pub fn parse<P: AsRef<Path>>(&mut self, path: P) -> Result<MkvInfo, String> {
         let path = path.as_ref();
-        let file = File::open(path)
-            .map_err(|e| format!("Failed to open file: {}", e))?;
-        let file_size = file.metadata()
-            .map_err(|e| format!("Failed to get file metadata: {}", e))?.len();
-        
-        let mkv = MatroskaFile::open(file)
-            .map_err(|e| format!("Failed to parse MKV: {:?}", e))?;
-        
+        let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+        let file_size = file
+            .metadata()
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?
+            .len();
+
+        let mkv = MatroskaFile::open(file).map_err(|e| format!("Failed to parse MKV: {:?}", e))?;
+
         // Get duration in nanoseconds, convert to ms
         let duration_ns = mkv.info().duration().unwrap_or(0.0) as u64;
         let duration_ms = duration_ns / 1_000_000;
-        
+
         // Get timecode scale
         let timecode_scale = mkv.info().timestamp_scale().get();
-        
+
         // Convert tracks
         let tracks: Vec<MkvTrack> = mkv.tracks().iter().map(convert_track).collect();
-        
+
         // Get optional string fields
         let title = mkv.info().title().map(|s| s.to_string());
         let muxing_app = Some(mkv.info().muxing_app().to_string());
         let writing_app = Some(mkv.info().writing_app().to_string());
-        
+
         Ok(MkvInfo {
             file_path: path.to_string_lossy().to_string(),
             file_size,
@@ -340,8 +340,7 @@ pub struct MkvDemuxer<R: Read + Seek> {
 impl MkvDemuxer<File> {
     /// Create new demuxer from file path
     pub fn open<P: AsRef<Path>>(path: P, info: MkvInfo) -> Result<Self, String> {
-        let file = File::open(path.as_ref())
-            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let file = File::open(path.as_ref()).map_err(|e| format!("Failed to open file: {}", e))?;
         Self::new(file, info)
     }
 }
@@ -349,13 +348,12 @@ impl MkvDemuxer<File> {
 impl<R: Read + Seek> MkvDemuxer<R> {
     /// Create from reader
     pub fn new(reader: R, info: MkvInfo) -> Result<Self, String> {
-        let mkv = MatroskaFile::open(reader)
-            .map_err(|e| format!("Failed to open MKV: {:?}", e))?;
-        
+        let mkv = MatroskaFile::open(reader).map_err(|e| format!("Failed to open MKV: {:?}", e))?;
+
         // Find video and audio tracks
         let mut video_track = None;
         let mut audio_track = None;
-        
+
         for track in mkv.tracks() {
             if video_track.is_none() && track.track_type() == TrackType::Video {
                 video_track = Some(track.track_number().get());
@@ -364,7 +362,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
                 audio_track = Some(track.track_number().get());
             }
         }
-        
+
         Ok(Self {
             mkv,
             frame: Frame::default(),
@@ -373,22 +371,22 @@ impl<R: Read + Seek> MkvDemuxer<R> {
             audio_track,
         })
     }
-    
+
     /// Get media info
     pub fn info(&self) -> &MkvInfo {
         &self.info
     }
-    
+
     /// Find video track number
     pub fn video_track(&self) -> Option<u64> {
         self.video_track
     }
-    
+
     /// Find audio track number  
     pub fn audio_track(&self) -> Option<u64> {
         self.audio_track
     }
-    
+
     /// Read next packet
     pub fn read_packet(&mut self) -> Option<MkvPacket> {
         match self.mkv.next_frame(&mut self.frame) {
@@ -396,7 +394,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
                 // Timestamp is in nanoseconds
                 let pts_ns = self.frame.timestamp as i64;
                 let pts_ms = pts_ns / 1_000_000;
-                
+
                 Some(MkvPacket {
                     track_number: self.frame.track as u64,
                     pts_ms,
@@ -412,7 +410,7 @@ impl<R: Read + Seek> MkvDemuxer<R> {
             }
         }
     }
-    
+
     /// Seek (not implemented - matroska-demuxer doesn't support seeking)
     pub fn seek(&mut self, _time_ms: u64) -> Result<(), String> {
         Ok(())

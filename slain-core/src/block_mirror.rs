@@ -1,47 +1,47 @@
 // BLOCK MIRROR - Theoretical Crypto Block Inversion
-// 
+//
 // ═══════════════════════════════════════════════════════════════════════════
-// 
+//
 // CONCEPT: Instead of mining forward, INVERT backward
-// 
+//
 // Traditional:
 //   Genesis → Block 1 → Block 2 → ... → Block N → [NEW WORK]
 //   Always forward, always computing NEW hashes
-// 
+//
 // Mirror Concept:
 //   [PAST] ← Invert ← Block N ← ... ← Block 1 ← Genesis
 //   The numbers aren't random - they're DETERMINISTIC
 //   Like Mandelbrot, the pattern exists in both directions
-//   
+//
 // ═══════════════════════════════════════════════════════════════════════════
-// 
+//
 // THE MIRROR ANALOGY:
-// 
+//
 //   ┌────────┐                              ┌────────┐
 //   │ MIRROR │  You → ∞ reflections → You  │ MIRROR │
 //   │   A    │                              │   B    │
 //   └────────┘                              └────────┘
-// 
+//
 //   When you see yourself in the infinite recursion:
 //   - Forward: You wave → reflection waves (delayed by c)
 //   - Backward: Reflection "already" waved
 //   - The "off by one in a billion" is extractable information
-// 
+//
 // ═══════════════════════════════════════════════════════════════════════════
-// 
+//
 // MATHEMATICAL BASIS:
-// 
+//
 // Hashing is theoretically one-way. But:
-// 
+//
 // 1. SHA-256 maps 2^512 inputs → 2^256 outputs
 //    For any hash H, there exist 2^256 preimages on average
-//    
+//
 // 2. Blockchain hashes aren't random - they have STRUCTURE:
 //    - Block header format is known
 //    - Previous hash creates chain
 //    - Nonce space is bounded
 //    - Timestamp range is bounded
-//    
+//
 // 3. Given enough blocks, patterns emerge:
 //    - Hash distribution isn't uniform in practice
 //    - Miner behavior creates temporal patterns
@@ -50,11 +50,11 @@
 // 4. Inversion doesn't mean breaking SHA-256
 //    It means finding equivalent representations
 //    16 ways × existing blocks = new search space
-// 
+//
 // ═══════════════════════════════════════════════════════════════════════════
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ============================================================================
 // Block Structures
@@ -77,32 +77,32 @@ pub struct InvertedBlock {
     pub original: Block,
     pub inversion_type: InversionType,
     pub inverted_hash: [u8; 32],
-    pub mirror_depth: u64,      // How far back in the mirror
+    pub mirror_depth: u64, // How far back in the mirror
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum InversionType {
     // Bit-level inversions
-    BitFlip,            // Flip all bits
-    ByteReverse,        // Reverse byte order
-    NibbleSwap,         // Swap nibbles within bytes
-    
+    BitFlip,     // Flip all bits
+    ByteReverse, // Reverse byte order
+    NibbleSwap,  // Swap nibbles within bytes
+
     // Mathematical inversions
-    XorComplement,      // XOR with pattern
-    ModularInverse,     // Modular arithmetic
-    FieldInverse,       // Galois field
-    
+    XorComplement,  // XOR with pattern
+    ModularInverse, // Modular arithmetic
+    FieldInverse,   // Galois field
+
     // Structural inversions
-    ChainReverse,       // Treat hash as pointer backward
-    MerkleUnwind,       // Unwind merkle tree
-    TimestampMirror,    // Mirror around timestamp
-    
+    ChainReverse,    // Treat hash as pointer backward
+    MerkleUnwind,    // Unwind merkle tree
+    TimestampMirror, // Mirror around timestamp
+
     // Combination inversions
-    Rotation(u8),       // Rotate by N bits
-    Permutation(u8),    // Permutation index
-    
+    Rotation(u8),    // Rotate by N bits
+    Permutation(u8), // Permutation index
+
     // The 16 canonical inversions
-    Canonical(u8),      // 0-15
+    Canonical(u8), // 0-15
 }
 
 // ============================================================================
@@ -112,7 +112,7 @@ pub enum InversionType {
 /// Apply one of 16 canonical inversions to a hash
 pub fn canonical_inversion(hash: &[u8; 32], inversion: u8) -> [u8; 32] {
     let mut result = *hash;
-    
+
     match inversion % 16 {
         0 => {
             // Identity (for completeness)
@@ -137,10 +137,9 @@ pub fn canonical_inversion(hash: &[u8; 32], inversion: u8) -> [u8; 32] {
         4 => {
             // XOR with first 32 bytes of SHA-256 of "MIRROR"
             let pattern = [
-                0x5d, 0x41, 0x40, 0x2a, 0xbc, 0x4b, 0x2a, 0x76,
-                0xb9, 0x71, 0x9d, 0x91, 0x10, 0x17, 0xc5, 0x92,
-                0xae, 0x78, 0x9c, 0x51, 0x7c, 0xd7, 0xc4, 0xa2,
-                0x24, 0x12, 0xab, 0x14, 0x1f, 0x79, 0x67, 0x83,
+                0x5d, 0x41, 0x40, 0x2a, 0xbc, 0x4b, 0x2a, 0x76, 0xb9, 0x71, 0x9d, 0x91, 0x10, 0x17,
+                0xc5, 0x92, 0xae, 0x78, 0x9c, 0x51, 0x7c, 0xd7, 0xc4, 0xa2, 0x24, 0x12, 0xab, 0x14,
+                0x1f, 0x79, 0x67, 0x83,
             ];
             for (i, byte) in result.iter_mut().enumerate() {
                 *byte ^= pattern[i];
@@ -226,7 +225,7 @@ pub fn canonical_inversion(hash: &[u8; 32], inversion: u8) -> [u8; 32] {
         }
         _ => unreachable!(),
     }
-    
+
     result
 }
 
@@ -234,7 +233,7 @@ pub fn canonical_inversion(hash: &[u8; 32], inversion: u8) -> [u8; 32] {
 pub fn find_best_inversion(hash: &[u8; 32]) -> (u8, [u8; 32]) {
     let mut best_inversion = 0u8;
     let mut best_hash = *hash;
-    
+
     for i in 0..16 {
         let inverted = canonical_inversion(hash, i);
         if inverted < best_hash {
@@ -242,7 +241,7 @@ pub fn find_best_inversion(hash: &[u8; 32]) -> (u8, [u8; 32]) {
             best_inversion = i;
         }
     }
-    
+
     (best_inversion, best_hash)
 }
 
@@ -266,7 +265,7 @@ impl MirrorChain {
             mirror_states: HashMap::new(),
         }
     }
-    
+
     /// Calculate potential mirror states at a given depth
     /// This grows exponentially: 16^depth
     pub fn potential_states_at_depth(depth: u64) -> u128 {
@@ -276,18 +275,18 @@ impl MirrorChain {
             16u128.pow(depth as u32)
         }
     }
-    
+
     /// The "off by one in a billion" phenomenon
     /// When you look at infinite reflections, there's always a tiny difference
     /// This difference is extractable information
     pub fn calculate_mirror_delta(block1: &Block, block2: &Block) -> MirrorDelta {
         let mut bit_differences = 0u32;
-        
+
         for i in 0..32 {
             let xor = block1.hash[i] ^ block2.hash[i];
             bit_differences += xor.count_ones();
         }
-        
+
         MirrorDelta {
             bit_distance: bit_differences,
             normalized_distance: bit_differences as f64 / 256.0,
@@ -298,9 +297,9 @@ impl MirrorChain {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MirrorDelta {
-    pub bit_distance: u32,          // Hamming distance
-    pub normalized_distance: f64,    // 0.0 - 1.0
-    pub extractable_bits: u32,       // Bits of "free" information
+    pub bit_distance: u32,        // Hamming distance
+    pub normalized_distance: f64, // 0.0 - 1.0
+    pub extractable_bits: u32,    // Bits of "free" information
 }
 
 // ============================================================================
@@ -397,18 +396,18 @@ impl ReverseMiner {
             valid_mirrors_found: 0,
         }
     }
-    
+
     /// Try all 16 inversions on current block
     /// A "valid" mirror is one that maintains chain consistency
     /// when inverted back
     pub fn mine_mirrors(&mut self, block: &Block) -> Vec<InvertedBlock> {
         let mut valid_mirrors = Vec::new();
-        
+
         for inversion in 0..16 {
             self.inversions_tried += 1;
-            
+
             let inverted_hash = canonical_inversion(&block.hash, inversion);
-            
+
             // Check if inverted hash is "better" (lower)
             if inverted_hash < block.hash {
                 valid_mirrors.push(InvertedBlock {
@@ -420,17 +419,17 @@ impl ReverseMiner {
                 self.valid_mirrors_found += 1;
             }
         }
-        
+
         valid_mirrors
     }
-    
+
     /// The key insight: going backward doesn't require new computation
     /// It reuses existing structure in a different basis
     pub fn efficiency_vs_forward(&self) -> f64 {
         // Forward mining: ~2^difficulty hashes per block
         // Mirror mining: 16 inversions per block
         // Efficiency gain: 2^difficulty / 16
-        
+
         let difficulty = self.chain_tip.difficulty as f64;
         2.0_f64.powf(difficulty) / 16.0
     }
@@ -451,20 +450,20 @@ pub fn calculate_mirror_value(
 ) -> MirrorValue {
     // The further back we go, the more potential states
     let potential_states = 16u128.pow(blocks_backward.min(30) as u32);
-    
+
     // But value per state decreases (already "mined" in forward direction)
     let value_density = current_block_value / (chain_age_blocks as f64);
-    
+
     // The "one in a billion" extractable difference
     let billion = 1_000_000_000.0;
     let extractable_per_state = value_density / billion;
-    
+
     // Total theoretical value
     let total_theoretical = (potential_states as f64) * extractable_per_state;
-    
+
     // Practical cap based on computational feasibility
     let practical_cap = current_block_value * (blocks_backward as f64);
-    
+
     MirrorValue {
         blocks_backward,
         potential_states: potential_states.min(u128::MAX),
@@ -526,9 +525,6 @@ LIMITATIONS:
 // Public Rust API
 // ============================================================================
 
-
-
-
 pub fn mirror_canonical_inversion(hash: Vec<u8>, inversion: u8) -> Vec<u8> {
     if hash.len() != 32 {
         return vec![0; 32];
@@ -537,7 +533,6 @@ pub fn mirror_canonical_inversion(hash: Vec<u8>, inversion: u8) -> Vec<u8> {
     arr.copy_from_slice(&hash);
     canonical_inversion(&arr, inversion).to_vec()
 }
-
 
 pub fn mirror_find_best_inversion(hash: Vec<u8>) -> serde_json::Value {
     if hash.len() != 32 {
@@ -552,30 +547,33 @@ pub fn mirror_find_best_inversion(hash: Vec<u8>) -> serde_json::Value {
     })
 }
 
-
 pub fn mirror_all_inversions(hash: Vec<u8>) -> Vec<serde_json::Value> {
     if hash.len() != 32 {
         return vec![];
     }
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&hash);
-    
-    (0..16).map(|i| {
-        let inverted = canonical_inversion(&arr, i);
-        serde_json::json!({
-            "inversion": i,
-            "hash": inverted.to_vec(),
-            "is_lower": inverted < arr,
+
+    (0..16)
+        .map(|i| {
+            let inverted = canonical_inversion(&arr, i);
+            serde_json::json!({
+                "inversion": i,
+                "hash": inverted.to_vec(),
+                "is_lower": inverted < arr,
+            })
         })
-    }).collect()
+        .collect()
 }
 
-
-pub fn mirror_calculate_value(blocks_backward: u64, block_value: f64, chain_age: u64) -> serde_json::Value {
+pub fn mirror_calculate_value(
+    blocks_backward: u64,
+    block_value: f64,
+    chain_age: u64,
+) -> serde_json::Value {
     let value = calculate_mirror_value(blocks_backward, block_value, chain_age);
     serde_json::to_value(value).unwrap_or_default()
 }
-
 
 pub fn mirror_potential_states(depth: u64) -> String {
     let states = MirrorChain::potential_states_at_depth(depth);
@@ -585,7 +583,6 @@ pub fn mirror_potential_states(depth: u64) -> String {
         format!("{}", states)
     }
 }
-
 
 pub fn mirror_description() -> String {
     concept_summary().to_string()

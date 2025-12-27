@@ -1,7 +1,7 @@
 // HARDWARE BRIDGE - Universal Firmware Rewrite Engine
-// 
+//
 // Connect devices → Analyze firmware → Rewrite in Rust → Flash back
-// 
+//
 // Targets:
 // • Automotive (OBD-II, CAN bus)
 // • Smart TVs (WebOS, Tizen, Android TV)
@@ -35,7 +35,7 @@ pub enum DeviceType {
         ecu_type: String,
         vehicle: Option<VehicleInfo>,
     },
-    
+
     // Consumer Electronics
     SmartTV {
         platform: TvPlatform,
@@ -49,7 +49,7 @@ pub enum DeviceType {
         category: String,
         connectivity: Vec<String>,
     },
-    
+
     // Financial
     PosTerminal {
         manufacturer: String,
@@ -58,14 +58,14 @@ pub enum DeviceType {
     CardReader {
         interface: CardInterface,
     },
-    
+
     // Computing
     GpuBios {
         vendor: GpuVendor,
         model: String,
         vbios_version: String,
     },
-    
+
     // Generic
     EmbeddedSystem {
         architecture: String,
@@ -75,12 +75,12 @@ pub enum DeviceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AutomotiveProtocol {
-    ObdII,          // Standard OBD-II (1996+)
-    CanBus,         // Controller Area Network
-    LinBus,         // Local Interconnect Network
-    FlexRay,        // High-speed automotive
-    Ethernet,       // Modern vehicles (100BASE-T1)
-    J1939,          // Heavy duty vehicles
+    ObdII,    // Standard OBD-II (1996+)
+    CanBus,   // Controller Area Network
+    LinBus,   // Local Interconnect Network
+    FlexRay,  // High-speed automotive
+    Ethernet, // Modern vehicles (100BASE-T1)
+    J1939,    // Heavy duty vehicles
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,20 +102,20 @@ pub struct EcuInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TvPlatform {
-    WebOS,          // LG
-    Tizen,          // Samsung
-    AndroidTV,      // Sony, TCL, etc
+    WebOS,     // LG
+    Tizen,     // Samsung
+    AndroidTV, // Sony, TCL, etc
     RokuOS,
-    FireOS,         // Amazon
-    VIDAA,          // Hisense
+    FireOS, // Amazon
+    VIDAA,  // Hisense
     Custom,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CardInterface {
-    Emv,            // Chip cards
-    Nfc,            // Contactless
-    MagStripe,      // Legacy
+    Emv,       // Chip cards
+    Nfc,       // Contactless
+    MagStripe, // Legacy
     SmartCard,
 }
 
@@ -148,7 +148,7 @@ pub struct FirmwareSection {
     pub address: u64,
     pub size: u64,
     pub section_type: SectionType,
-    pub permissions: String,  // rwx
+    pub permissions: String, // rwx
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,8 +210,8 @@ pub enum VulnSeverity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewritePotential {
-    pub feasibility: f32,           // 0.0 - 1.0
-    pub estimated_size_reduction: f32,  // percentage
+    pub feasibility: f32,              // 0.0 - 1.0
+    pub estimated_size_reduction: f32, // percentage
     pub estimated_speed_improvement: f32,
     pub security_improvement: f32,
     pub effort_estimate_hours: u32,
@@ -228,22 +228,22 @@ pub struct RewriteConfig {
     pub target_architecture: String,
     pub optimization_level: OptLevel,
     pub include_runtime: bool,
-    pub no_std: bool,               // Bare metal, no stdlib
+    pub no_std: bool, // Bare metal, no stdlib
     pub panic_strategy: PanicStrategy,
-    pub preserve_abi: bool,         // Keep C-compatible interface
+    pub preserve_abi: bool, // Keep C-compatible interface
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum OptLevel {
     Debug,
     Release,
-    Size,           // Optimize for size (embedded)
-    Speed,          // Optimize for speed
+    Size,  // Optimize for size (embedded)
+    Speed, // Optimize for speed
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PanicStrategy {
-    Abort,          // Embedded default
+    Abort, // Embedded default
     Unwind,
 }
 
@@ -266,9 +266,9 @@ pub fn analyze_for_rewrite(firmware: &[u8], device: &DeviceType) -> FirmwareAnal
     // - capstone for disassembly
     // - goblin for binary parsing
     // - custom heuristics for pattern recognition
-    
+
     let arch = detect_architecture(firmware);
-    
+
     FirmwareAnalysis {
         device_type: device.clone(),
         binary_size: firmware.len() as u64,
@@ -286,34 +286,37 @@ fn detect_architecture(firmware: &[u8]) -> String {
     if firmware.len() < 4 {
         return "unknown".to_string();
     }
-    
+
     // ELF magic
     if &firmware[0..4] == b"\x7fELF" {
         let class = firmware[4];
         let machine = if firmware.len() > 18 {
             u16::from_le_bytes([firmware[18], firmware[19]])
-        } else { 0 };
-        
+        } else {
+            0
+        };
+
         return match machine {
             0x03 => "x86",
             0x3E => "x86_64",
             0x28 => "arm",
             0xB7 => "aarch64",
             _ => "elf-unknown",
-        }.to_string();
+        }
+        .to_string();
     }
-    
+
     // ARM Cortex-M vector table pattern
     if firmware.len() > 8 {
         let sp = u32::from_le_bytes([firmware[0], firmware[1], firmware[2], firmware[3]]);
         let reset = u32::from_le_bytes([firmware[4], firmware[5], firmware[6], firmware[7]]);
-        
+
         // Stack pointer in RAM range, reset vector in flash range
         if sp >= 0x20000000 && sp < 0x40000000 && reset >= 0x08000000 && reset < 0x10000000 {
             return "arm-cortex-m".to_string();
         }
     }
-    
+
     "unknown".to_string()
 }
 
@@ -322,7 +325,9 @@ fn find_entry_point(firmware: &[u8], arch: &str) -> u64 {
         "arm-cortex-m" => {
             if firmware.len() > 7 {
                 u32::from_le_bytes([firmware[4], firmware[5], firmware[6], firmware[7]]) as u64
-            } else { 0 }
+            } else {
+                0
+            }
         }
         _ => 0,
     }
@@ -340,10 +345,10 @@ fn extract_symbols(_firmware: &[u8]) -> Vec<Symbol> {
 
 fn scan_vulnerabilities(firmware: &[u8]) -> Vec<Vulnerability> {
     let mut vulns = Vec::new();
-    
+
     // Pattern-based vulnerability detection
     // Look for dangerous C patterns
-    
+
     // strcpy without bounds
     if contains_pattern(firmware, b"strcpy") {
         vulns.push(Vulnerability {
@@ -354,7 +359,7 @@ fn scan_vulnerabilities(firmware: &[u8]) -> Vec<Vulnerability> {
             fixable_with_rust: true,
         });
     }
-    
+
     // sprintf without bounds
     if contains_pattern(firmware, b"sprintf") {
         vulns.push(Vulnerability {
@@ -365,7 +370,7 @@ fn scan_vulnerabilities(firmware: &[u8]) -> Vec<Vulnerability> {
             fixable_with_rust: true,
         });
     }
-    
+
     // Hardcoded credentials patterns
     let cred_patterns: &[&[u8]] = &[b"password", b"admin", b"root", b"default"];
     for pattern in cred_patterns.iter() {
@@ -380,7 +385,7 @@ fn scan_vulnerabilities(firmware: &[u8]) -> Vec<Vulnerability> {
             break;
         }
     }
-    
+
     vulns
 }
 
@@ -390,26 +395,26 @@ fn contains_pattern(data: &[u8], pattern: &[u8]) -> bool {
 
 fn estimate_rewrite_potential(firmware: &[u8], device: &DeviceType) -> RewritePotential {
     let size = firmware.len() as f32;
-    
+
     // Base estimates - Rust typically produces smaller, faster code
-    let base_size_reduction = 0.15;  // 15% smaller
-    let base_speed_improvement = 0.20;  // 20% faster
-    
+    let base_size_reduction = 0.15; // 15% smaller
+    let base_speed_improvement = 0.20; // 20% faster
+
     // Adjust based on device type
     let (feasibility, effort) = match device {
-        DeviceType::Automotive { .. } => (0.7, 200),  // High effort, safety critical
+        DeviceType::Automotive { .. } => (0.7, 200), // High effort, safety critical
         DeviceType::SmartTV { .. } => (0.8, 100),
-        DeviceType::Router { .. } => (0.9, 80),       // Good target, lots of Rust support
-        DeviceType::GpuBios { .. } => (0.5, 300),     // Complex, vendor specific
-        DeviceType::IoTDevice { .. } => (0.85, 60),   // Often simple, good target
+        DeviceType::Router { .. } => (0.9, 80), // Good target, lots of Rust support
+        DeviceType::GpuBios { .. } => (0.5, 300), // Complex, vendor specific
+        DeviceType::IoTDevice { .. } => (0.85, 60), // Often simple, good target
         _ => (0.6, 150),
     };
-    
+
     RewritePotential {
         feasibility,
         estimated_size_reduction: base_size_reduction,
         estimated_speed_improvement: base_speed_improvement,
-        security_improvement: 0.8,  // Rust eliminates ~80% of memory safety bugs
+        security_improvement: 0.8, // Rust eliminates ~80% of memory safety bugs
         effort_estimate_hours: effort,
         blockers: vec![],
         recommendations: vec![
@@ -426,18 +431,18 @@ fn estimate_rewrite_potential(firmware: &[u8], device: &DeviceType) -> RewritePo
 
 pub mod automotive {
     use super::*;
-    
+
     /// Connect to vehicle via OBD-II
     pub async fn connect_obd2(port: &str) -> Result<VehicleConnection, String> {
         // Would use serialport crate
         Err("OBD-II connection not implemented".to_string())
     }
-    
+
     pub struct VehicleConnection {
         pub vehicle: VehicleInfo,
         pub supported_pids: Vec<u16>,
     }
-    
+
     /// Read ECU firmware for analysis
     pub async fn read_ecu_firmware(
         _conn: &VehicleConnection,
@@ -446,7 +451,7 @@ pub mod automotive {
         // Would use UDS protocol for firmware reading
         Err("ECU reading not implemented".to_string())
     }
-    
+
     /// Common ECU modules that could be rewritten
     pub fn rewritable_modules() -> Vec<&'static str> {
         vec![
@@ -463,12 +468,12 @@ pub mod automotive {
 }
 
 // ============================================================================
-// Smart TV Specific  
+// Smart TV Specific
 // ============================================================================
 
 pub mod smart_tv {
     use super::*;
-    
+
     /// TV firmware analysis
     pub struct TvFirmwareInfo {
         pub platform: TvPlatform,
@@ -477,7 +482,7 @@ pub mod smart_tv {
         pub system_size: u64,
         pub update_channel: String,
     }
-    
+
     /// Areas where Rust could improve TV firmware
     pub fn optimization_targets() -> Vec<&'static str> {
         vec![
@@ -489,7 +494,7 @@ pub mod smart_tv {
             "DRM handlers",
         ]
     }
-    
+
     /// Potential efficiency gains
     pub fn estimate_savings(current_fw_size: u64) -> (u64, f32) {
         // Rust rewrites typically save 15-30% on embedded
@@ -505,7 +510,7 @@ pub mod smart_tv {
 
 pub mod gpu_bios {
     use super::*;
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct GpuBiosInfo {
         pub vendor: GpuVendor,
@@ -516,7 +521,7 @@ pub mod gpu_bios {
         pub power_tables: Vec<PowerState>,
         pub memory_timings: Vec<MemoryTiming>,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PowerState {
         pub state: u8,
@@ -525,13 +530,13 @@ pub mod gpu_bios {
         pub voltage: u32,
         pub power_limit: u32,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MemoryTiming {
         pub name: String,
         pub value: u32,
     }
-    
+
     /// Analyze GPU BIOS for mining optimization
     pub fn analyze_for_mining(bios: &[u8]) -> MiningOptimization {
         MiningOptimization {
@@ -543,7 +548,7 @@ pub mod gpu_bios {
             memory_clock_recommendation: None,
         }
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MiningOptimization {
         pub current_hashrate_estimate: f64,
@@ -559,39 +564,37 @@ pub mod gpu_bios {
 // Public Rust API
 // ============================================================================
 
-
-
-
-pub fn hardware_analyze_firmware(firmware_bytes: Vec<u8>, device_type: String) -> serde_json::Value {
+pub fn hardware_analyze_firmware(
+    firmware_bytes: Vec<u8>,
+    device_type: String,
+) -> serde_json::Value {
     let device = match device_type.as_str() {
-        "router" => DeviceType::Router { 
-            chipset: "unknown".to_string(), 
-            current_firmware: "unknown".to_string() 
+        "router" => DeviceType::Router {
+            chipset: "unknown".to_string(),
+            current_firmware: "unknown".to_string(),
         },
-        "smart_tv" => DeviceType::SmartTV { 
-            platform: TvPlatform::Custom, 
-            model: "unknown".to_string() 
+        "smart_tv" => DeviceType::SmartTV {
+            platform: TvPlatform::Custom,
+            model: "unknown".to_string(),
         },
-        "gpu" => DeviceType::GpuBios { 
-            vendor: GpuVendor::Nvidia, 
-            model: "unknown".to_string(), 
-            vbios_version: "unknown".to_string() 
+        "gpu" => DeviceType::GpuBios {
+            vendor: GpuVendor::Nvidia,
+            model: "unknown".to_string(),
+            vbios_version: "unknown".to_string(),
         },
-        _ => DeviceType::EmbeddedSystem { 
-            architecture: "unknown".to_string(), 
-            flash_size: firmware_bytes.len() as u64 
+        _ => DeviceType::EmbeddedSystem {
+            architecture: "unknown".to_string(),
+            flash_size: firmware_bytes.len() as u64,
         },
     };
-    
+
     let analysis = analyze_for_rewrite(&firmware_bytes, &device);
     serde_json::to_value(analysis).unwrap_or_default()
 }
 
-
 pub fn hardware_detect_architecture(firmware_bytes: Vec<u8>) -> String {
     detect_architecture(&firmware_bytes)
 }
-
 
 pub fn hardware_scan_vulnerabilities(firmware_bytes: Vec<u8>) -> Vec<serde_json::Value> {
     scan_vulnerabilities(&firmware_bytes)
@@ -600,16 +603,14 @@ pub fn hardware_scan_vulnerabilities(firmware_bytes: Vec<u8>) -> Vec<serde_json:
         .collect()
 }
 
-
 pub fn hardware_rewrite_potential(firmware_bytes: Vec<u8>) -> serde_json::Value {
-    let device = DeviceType::EmbeddedSystem { 
-        architecture: detect_architecture(&firmware_bytes), 
-        flash_size: firmware_bytes.len() as u64 
+    let device = DeviceType::EmbeddedSystem {
+        architecture: detect_architecture(&firmware_bytes),
+        flash_size: firmware_bytes.len() as u64,
     };
     let potential = estimate_rewrite_potential(&firmware_bytes, &device);
     serde_json::to_value(potential).unwrap_or_default()
 }
-
 
 pub fn hardware_description() -> String {
     r#"
@@ -634,5 +635,6 @@ BENEFITS OF RUST REWRITE:
 The tool analyzes existing C/assembly firmware,
 identifies vulnerabilities, and estimates the
 effort/benefit of rewriting in Rust.
-"#.to_string()
+"#
+    .to_string()
 }

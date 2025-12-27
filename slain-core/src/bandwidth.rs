@@ -47,14 +47,14 @@ pub enum AttentionState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UpscaleMethod {
-    None,           // Native resolution
-    Bilinear,       // Fast, low quality
-    Lanczos,        // Medium quality
-    Fsr,            // AMD FidelityFX
-    Dlss,           // NVIDIA AI (needs tensor cores)
-    RealEsrgan,     // AI upscaler (best quality)
-    Rife,           // Frame interpolation
-    Kornia,         // kornia-rs GPU processing
+    None,       // Native resolution
+    Bilinear,   // Fast, low quality
+    Lanczos,    // Medium quality
+    Fsr,        // AMD FidelityFX
+    Dlss,       // NVIDIA AI (needs tensor cores)
+    RealEsrgan, // AI upscaler (best quality)
+    Rife,       // Frame interpolation
+    Kornia,     // kornia-rs GPU processing
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -125,9 +125,9 @@ impl AttentionState {
             },
             Self::SecurityCamPip => QualityProfile {
                 state: *self,
-                target_width: 320,  // Per-camera, small
+                target_width: 320, // Per-camera, small
                 target_height: 240,
-                target_fps: 15.0,   // Security cams often 15fps
+                target_fps: 15.0, // Security cams often 15fps
                 max_bitrate_kbps: 500,
                 use_frame_interpolation: false,
                 upscale_method: UpscaleMethod::Bilinear,
@@ -166,13 +166,21 @@ pub struct SecurityCamera {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CameraSource {
     /// RTSP stream (IP cameras)
-    Rtsp { url: String, username: Option<String>, password: Option<String> },
+    Rtsp {
+        url: String,
+        username: Option<String>,
+        password: Option<String>,
+    },
     /// USB/UVC camera
     Usb { device_index: u32 },
     /// V4L2 device (Linux)
     V4L2 { device_path: String },
     /// ONVIF IP camera
-    Onvif { url: String, username: String, password: String },
+    Onvif {
+        url: String,
+        username: String,
+        password: String,
+    },
     /// NDI network source
     Ndi { source_name: String },
     /// HDMI capture card
@@ -190,9 +198,9 @@ pub enum PipPosition {
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum PipSize {
-    Small,      // 160x120
-    Medium,     // 320x240
-    Large,      // 480x360
+    Small,  // 160x120
+    Medium, // 320x240
+    Large,  // 480x360
     Custom { width: u32, height: u32 },
 }
 
@@ -224,87 +232,97 @@ impl SecurityCameraManager {
             total_bandwidth_limit_kbps: AtomicU32::new(5000), // 5 Mbps total for all cams
         }
     }
-    
+
     /// Add a security camera
     pub fn add_camera(&self, camera: SecurityCamera) {
         self.cameras.write().insert(camera.id.clone(), camera);
     }
-    
+
     /// Remove a camera
     pub fn remove_camera(&self, id: &str) {
         self.cameras.write().remove(id);
         self.active_feeds.write().retain(|i| i != id);
     }
-    
+
     /// Get camera by ID
     pub fn get_camera(&self, id: &str) -> Option<SecurityCamera> {
         self.cameras.read().get(id).cloned()
     }
-    
+
     /// List all cameras
     pub fn list_cameras(&self) -> Vec<SecurityCamera> {
         self.cameras.read().values().cloned().collect()
     }
-    
+
     /// Enable a camera feed
     pub fn enable_feed(&self, id: &str) -> bool {
         let max = self.max_simultaneous.load(Ordering::SeqCst);
         let mut feeds = self.active_feeds.write();
-        
+
         if feeds.len() >= max as usize {
             return false; // At capacity
         }
-        
+
         if !feeds.contains(&id.to_string()) {
             feeds.push(id.to_string());
         }
         true
     }
-    
+
     /// Disable a camera feed
     pub fn disable_feed(&self, id: &str) {
         self.active_feeds.write().retain(|i| i != id);
     }
-    
+
     /// Get active feeds
     pub fn active_feeds(&self) -> Vec<SecurityCamera> {
         let feed_ids = self.active_feeds.read().clone();
         let cameras = self.cameras.read();
-        
-        feed_ids.iter()
+
+        feed_ids
+            .iter()
             .filter_map(|id| cameras.get(id).cloned())
             .collect()
     }
-    
+
     /// Calculate per-camera bandwidth allocation
     pub fn bandwidth_per_camera(&self) -> u32 {
         let total = self.total_bandwidth_limit_kbps.load(Ordering::SeqCst);
         let active_count = self.active_feeds.read().len() as u32;
-        
+
         if active_count == 0 {
             total
         } else {
             total / active_count
         }
     }
-    
+
     /// Get PiP layout for rendering
     pub fn pip_layout(&self, screen_width: u32, screen_height: u32) -> Vec<PipRect> {
         let feeds = self.active_feeds();
         let mut rects = Vec::new();
-        
+
         for (i, cam) in feeds.iter().enumerate() {
             let (w, h) = cam.size.dimensions();
             let padding = 10i32;
-            
+
             let (x, y) = match cam.position {
                 PipPosition::TopLeft => (padding, padding + (i as i32 * (h as i32 + padding))),
-                PipPosition::TopRight => (screen_width as i32 - w as i32 - padding, padding + (i as i32 * (h as i32 + padding))),
-                PipPosition::BottomLeft => (padding, screen_height as i32 - h as i32 - padding - (i as i32 * (h as i32 + padding))),
-                PipPosition::BottomRight => (screen_width as i32 - w as i32 - padding, screen_height as i32 - h as i32 - padding - (i as i32 * (h as i32 + padding))),
+                PipPosition::TopRight => (
+                    screen_width as i32 - w as i32 - padding,
+                    padding + (i as i32 * (h as i32 + padding)),
+                ),
+                PipPosition::BottomLeft => (
+                    padding,
+                    screen_height as i32 - h as i32 - padding - (i as i32 * (h as i32 + padding)),
+                ),
+                PipPosition::BottomRight => (
+                    screen_width as i32 - w as i32 - padding,
+                    screen_height as i32 - h as i32 - padding - (i as i32 * (h as i32 + padding)),
+                ),
                 PipPosition::Custom { x, y } => (x, y),
             };
-            
+
             rects.push(PipRect {
                 camera_id: cam.id.clone(),
                 x,
@@ -313,7 +331,7 @@ impl SecurityCameraManager {
                 height: h,
             });
         }
-        
+
         rects
     }
 }
@@ -328,7 +346,9 @@ pub struct PipRect {
 }
 
 impl Default for SecurityCameraManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ============================================================================
@@ -336,7 +356,7 @@ impl Default for SecurityCameraManager {
 // ============================================================================
 
 /// Kornia-based image processor for real-time video manipulation
-/// 
+///
 /// Uses kornia-rs for GPU-accelerated operations without temp files:
 /// - Resize/scale
 /// - Color space conversion
@@ -351,62 +371,71 @@ impl KorniaProcessor {
     pub fn new() -> Self {
         Self { initialized: false }
     }
-    
+
     /// Initialize kornia (call once)
     pub fn init(&mut self) -> Result<(), String> {
         // kornia-rs initialization
         // In real implementation:
         // use kornia::image::Image;
         // use kornia::io::functional as io_f;
-        
+
         self.initialized = true;
         tracing::info!("Kornia processor initialized");
         Ok(())
     }
-    
+
     /// Resize frame using GPU
     pub fn resize(&self, frame: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) -> Vec<u8> {
         if !self.initialized {
             // Fallback: just return original
             return frame.to_vec();
         }
-        
+
         // Real implementation using kornia-rs:
         // let img = Image::from_raw(frame, src_w, src_h, 3);
         // let resized = kornia::imgproc::resize(&img, (dst_h, dst_w), kornia::imgproc::InterpolationMode::Bilinear);
         // resized.into_vec()
-        
+
         // Placeholder: allocate target size
         vec![0u8; (dst_w * dst_h * 3) as usize]
     }
-    
+
     /// Apply Gaussian blur
     pub fn blur(&self, frame: &[u8], width: u32, height: u32, kernel_size: u32) -> Vec<u8> {
         // kornia::imgproc::gaussian_blur(&img, (kernel_size, kernel_size), sigma)
         frame.to_vec()
     }
-    
+
     /// Convert color space (e.g., NV12 to RGB)
     pub fn convert_color(&self, frame: &[u8], from: ColorSpace, to: ColorSpace) -> Vec<u8> {
         // kornia uses different color conversion functions
         frame.to_vec()
     }
-    
+
     /// Apply sharpening filter
     pub fn sharpen(&self, frame: &[u8], width: u32, height: u32, amount: f32) -> Vec<u8> {
         frame.to_vec()
     }
-    
+
     /// Denoise frame
     pub fn denoise(&self, frame: &[u8], width: u32, height: u32, strength: f32) -> Vec<u8> {
         frame.to_vec()
     }
-    
+
     /// Crop region
-    pub fn crop(&self, frame: &[u8], width: u32, height: u32, x: u32, y: u32, crop_w: u32, crop_h: u32) -> Vec<u8> {
+    pub fn crop(
+        &self,
+        frame: &[u8],
+        width: u32,
+        height: u32,
+        x: u32,
+        y: u32,
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Vec<u8> {
         vec![0u8; (crop_w * crop_h * 3) as usize]
     }
-    
+
     /// Rotate frame
     pub fn rotate(&self, frame: &[u8], width: u32, height: u32, angle: f32) -> Vec<u8> {
         frame.to_vec()
@@ -424,7 +453,9 @@ pub enum ColorSpace {
 }
 
 impl Default for KorniaProcessor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ============================================================================
@@ -460,54 +491,54 @@ impl WindowMonitor {
             last_change: RwLock::new(Instant::now()),
         }
     }
-    
+
     pub fn set_focused(&self, focused: bool) {
         self.is_focused.store(focused, Ordering::SeqCst);
         self.recalculate();
     }
-    
+
     pub fn set_fullscreen(&self, fullscreen: bool) {
         self.is_fullscreen.store(fullscreen, Ordering::SeqCst);
         self.recalculate();
     }
-    
+
     pub fn set_visible(&self, visible: bool) {
         self.is_visible.store(visible, Ordering::SeqCst);
         self.recalculate();
     }
-    
+
     pub fn set_playing(&self, playing: bool) {
         self.is_playing.store(playing, Ordering::SeqCst);
         self.recalculate();
     }
-    
+
     pub fn set_pip(&self, pip: bool) {
         self.is_pip.store(pip, Ordering::SeqCst);
         self.recalculate();
     }
-    
+
     pub fn set_native_resolution(&self, w: u32, h: u32) {
         self.native_width.store(w, Ordering::SeqCst);
         self.native_height.store(h, Ordering::SeqCst);
     }
-    
+
     pub fn state(&self) -> AttentionState {
         *self.current_state.read()
     }
-    
+
     pub fn quality_profile(&self) -> QualityProfile {
         let w = self.native_width.load(Ordering::SeqCst);
         let h = self.native_height.load(Ordering::SeqCst);
         self.state().quality_profile(w, h)
     }
-    
+
     fn recalculate(&self) {
         let playing = self.is_playing.load(Ordering::SeqCst);
         let visible = self.is_visible.load(Ordering::SeqCst);
         let focused = self.is_focused.load(Ordering::SeqCst);
         let fullscreen = self.is_fullscreen.load(Ordering::SeqCst);
         let pip = self.is_pip.load(Ordering::SeqCst);
-        
+
         let new_state = if !playing {
             AttentionState::Paused
         } else if !visible {
@@ -521,51 +552,52 @@ impl WindowMonitor {
         } else {
             AttentionState::WindowedUnfocused
         };
-        
+
         let old_state = *self.current_state.read();
         if new_state != old_state {
             // Update time tracking
             let now = Instant::now();
             let elapsed = now.duration_since(*self.last_change.read());
-            
-            self.time_in_state.write()
+
+            self.time_in_state
+                .write()
                 .entry(old_state)
                 .and_modify(|d| *d += elapsed)
                 .or_insert(elapsed);
-            
+
             *self.last_change.write() = now;
             *self.current_state.write() = new_state;
-            
+
             tracing::debug!("Attention state: {:?} → {:?}", old_state, new_state);
         }
     }
-    
+
     /// Get bandwidth savings statistics
     pub fn savings_stats(&self) -> BandwidthStats {
         let w = self.native_width.load(Ordering::SeqCst);
         let h = self.native_height.load(Ordering::SeqCst);
         let times = self.time_in_state.read();
-        
+
         let mut total_time = Duration::ZERO;
         let mut weighted_savings = 0.0f32;
-        
+
         for (state, duration) in times.iter() {
             total_time += *duration;
             let profile = state.quality_profile(w, h);
             weighted_savings += profile.estimated_savings_percent * duration.as_secs_f32();
         }
-        
+
         let avg_savings = if total_time.as_secs_f32() > 0.0 {
             weighted_savings / total_time.as_secs_f32()
         } else {
             0.0
         };
-        
+
         // Estimate bandwidth saved
         let full_bitrate = 25.0; // 4K baseline Mbps
         let hours = total_time.as_secs_f32() / 3600.0;
         let saved_gb = full_bitrate * (avg_savings / 100.0) * hours * 3600.0 / 8.0 / 1000.0;
-        
+
         BandwidthStats {
             total_time_secs: total_time.as_secs_f32(),
             average_savings_percent: avg_savings,
@@ -577,7 +609,9 @@ impl WindowMonitor {
 }
 
 impl Default for WindowMonitor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

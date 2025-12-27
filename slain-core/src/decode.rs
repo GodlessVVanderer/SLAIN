@@ -1,7 +1,7 @@
 //! # Video Decode Module
 //!
 //! Unified interface for hardware and software video decoders.
-//! 
+//!
 //! ## Decoder Selection Priority:
 //! 1. NVDEC (NVIDIA) - if available and codec supported
 //! 2. VCN (AMD) - if available and codec supported  
@@ -51,10 +51,10 @@ impl Codec {
 /// Pixel format of decoded frames
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
-    Nv12,       // 4:2:0 semi-planar (Y plane + interleaved UV)
-    I420,       // 4:2:0 planar (Y + U + V separate)
-    P010,       // 10-bit 4:2:0 (for HDR)
-    Rgba8,      // 8-bit RGBA (post-conversion)
+    Nv12,  // 4:2:0 semi-planar (Y plane + interleaved UV)
+    I420,  // 4:2:0 planar (Y + U + V separate)
+    P010,  // 10-bit 4:2:0 (for HDR)
+    Rgba8, // 8-bit RGBA (post-conversion)
 }
 
 /// A decoded video frame
@@ -80,16 +80,16 @@ pub struct DecodedFrame {
 pub trait Decoder: Send {
     /// Get the codec this decoder handles
     fn codec(&self) -> Codec;
-    
+
     /// Decode a compressed packet into frames
     fn decode(&mut self, data: &[u8], pts_us: i64) -> Result<Vec<DecodedFrame>, DecodeError>;
-    
+
     /// Flush any buffered frames
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, DecodeError>;
-    
+
     /// Reset decoder state
     fn reset(&mut self);
-    
+
     /// Get decoder name for debugging
     fn name(&self) -> &str;
 }
@@ -97,13 +97,13 @@ pub trait Decoder: Send {
 /// Decoder backend types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecoderBackend {
-    Nvdec,      // NVIDIA hardware
-    Vcn,        // AMD hardware
-    Qsv,        // Intel hardware
-    Vaapi,      // Linux VA-API
-    OpenH264,   // Cisco software H.264
-    Dav1d,      // VideoLAN AV1
-    Software,   // Generic software fallback
+    Nvdec,    // NVIDIA hardware
+    Vcn,      // AMD hardware
+    Qsv,      // Intel hardware
+    Vaapi,    // Linux VA-API
+    OpenH264, // Cisco software H.264
+    Dav1d,    // VideoLAN AV1
+    Software, // Generic software fallback
 }
 
 /// Create the best available decoder for a codec
@@ -112,7 +112,7 @@ pub fn create_decoder(
     gpu: Option<&GpuDevice>,
 ) -> Result<Box<dyn Decoder>, DecodeError> {
     let mut tried = Vec::new();
-    
+
     // Try hardware first
     if let Some(device) = gpu {
         match device.vendor {
@@ -131,7 +131,7 @@ pub fn create_decoder(
             _ => {}
         }
     }
-    
+
     // Try software fallback
     match codec {
         Codec::H264 => {
@@ -150,7 +150,7 @@ pub fn create_decoder(
         }
         _ => {}
     }
-    
+
     Err(DecodeError::NoDecoder {
         codec: format!("{:?}", codec),
         tried,
@@ -176,21 +176,25 @@ impl OpenH264Decoder {
 
 #[cfg(feature = "software-decode")]
 impl Decoder for OpenH264Decoder {
-    fn codec(&self) -> Codec { Codec::H264 }
-    
+    fn codec(&self) -> Codec {
+        Codec::H264
+    }
+
     fn decode(&mut self, _data: &[u8], _pts_us: i64) -> Result<Vec<DecodedFrame>, DecodeError> {
         Err(DecodeError::DecodeFailed(
             "OpenH264 decoder not implemented in this build".to_string(),
         ))
     }
-    
+
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, DecodeError> {
         Ok(vec![])
     }
-    
+
     fn reset(&mut self) {}
-    
-    fn name(&self) -> &str { "OpenH264" }
+
+    fn name(&self) -> &str {
+        "OpenH264"
+    }
 }
 
 // ============================================================================
@@ -212,19 +216,23 @@ impl Dav1dDecoder {
 
 #[cfg(feature = "software-decode")]
 impl Decoder for Dav1dDecoder {
-    fn codec(&self) -> Codec { Codec::Av1 }
-    
+    fn codec(&self) -> Codec {
+        Codec::Av1
+    }
+
     fn decode(&mut self, _data: &[u8], _pts_us: i64) -> Result<Vec<DecodedFrame>, DecodeError> {
         Err(DecodeError::DecodeFailed(
             "dav1d decoder not implemented in this build".to_string(),
         ))
     }
-    
+
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, DecodeError> {
         Ok(vec![])
     }
-    
+
     fn reset(&mut self) {}
-    
-    fn name(&self) -> &str { "dav1d" }
+
+    fn name(&self) -> &str {
+        "dav1d"
+    }
 }
