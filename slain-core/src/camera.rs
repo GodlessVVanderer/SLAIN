@@ -8,8 +8,8 @@ pub struct CameraFrame {
 }
 
 pub fn fetch_camera_frame(url: &str) -> Result<CameraFrame, String> {
-    let response = reqwest::blocking::get(url)
-        .map_err(|e| format!("Camera request failed: {}", e))?;
+    let response =
+        reqwest::blocking::get(url).map_err(|e| format!("Camera request failed: {}", e))?;
     let bytes = response
         .bytes()
         .map_err(|e| format!("Failed to read camera response: {}", e))?;

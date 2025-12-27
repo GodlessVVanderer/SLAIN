@@ -1,7 +1,7 @@
 //! # SLAIN MCP Server
 //!
 //! Model Context Protocol server for AI-assisted GPU hardware tools.
-//! 
+//!
 //! ## Features
 //! - Query GPU information (clocks, temps, VRAM, capabilities)
 //! - Read/analyze vBIOS and power tables
@@ -13,7 +13,7 @@
 //! ```bash
 //! # Start server (stdio transport for Claude Desktop)
 //! slain-mcp
-//! 
+//!
 //! # With debug logging
 //! RUST_LOG=debug slain-mcp
 //! ```
@@ -93,7 +93,7 @@ impl McpServer {
 
     fn handle_request(&mut self, request: JsonRpcRequest) -> JsonRpcResponse {
         let id = request.id.clone().unwrap_or(Value::Null);
-        
+
         let result = match request.method.as_str() {
             "initialize" => self.handle_initialize(&request.params),
             "initialized" => {
@@ -452,7 +452,7 @@ impl McpServer {
     fn handle_tool_call(&self, params: &Value) -> Result<Value, JsonRpcError> {
         let name = params["name"].as_str().unwrap_or("");
         let args = &params["arguments"];
-        
+
         debug!("Tool call: {} with args: {:?}", name, args);
 
         let result = match name {
@@ -491,7 +491,7 @@ impl McpServer {
             })),
             Err(e) => Ok(json!({
                 "content": [{
-                    "type": "text", 
+                    "type": "text",
                     "text": format!("Error: {}", e)
                 }],
                 "isError": true
@@ -506,41 +506,38 @@ impl McpServer {
     fn tool_gpu_list(&self) -> Result<String, String> {
         let manager = gpu_manager().read();
         let devices = manager.devices();
-        
+
         if devices.is_empty() {
             return Ok("No GPUs detected. Run gpu_manager().init() first.".into());
         }
-        
+
         let mut output = format!("Found {} GPU(s):\n\n", devices.len());
         for device in devices {
             output.push_str(&format!(
                 "GPU {}: {} ({:?})\n  VRAM: {} MB\n  Driver: {}\n\n",
-                device.index,
-                device.name,
-                device.vendor,
-                device.vram_mb,
-                device.driver_version
+                device.index, device.name, device.vendor, device.vram_mb, device.driver_version
             ));
         }
-        
+
         Ok(output)
     }
 
     fn tool_gpu_info(&self, args: &Value) -> Result<String, String> {
         let device_index = args["device_index"].as_u64().unwrap_or(0) as u32;
         let manager = gpu_manager().read();
-        
-        let device = manager.devices()
+
+        let device = manager
+            .devices()
             .get(device_index as usize)
             .ok_or_else(|| format!("GPU {} not found", device_index))?;
-        
+
         Ok(serde_json::to_string_pretty(device).unwrap())
     }
 
     fn tool_gpu_state(&self, args: &Value) -> Result<String, String> {
         let device_index = args["device_index"].as_u64().unwrap_or(0) as u32;
         let manager = gpu_manager().read();
-        
+
         match manager.get_state(device_index) {
             Ok(state) => Ok(serde_json::to_string_pretty(&state).unwrap()),
             Err(e) => Err(format!("Failed to get GPU state: {}", e)),
@@ -550,11 +547,12 @@ impl McpServer {
     fn tool_gpu_decode_caps(&self, args: &Value) -> Result<String, String> {
         let device_index = args["device_index"].as_u64().unwrap_or(0) as u32;
         let manager = gpu_manager().read();
-        
-        let device = manager.devices()
+
+        let device = manager
+            .devices()
             .get(device_index as usize)
             .ok_or_else(|| format!("GPU {} not found", device_index))?;
-        
+
         let caps = &device.capabilities.decode;
         Ok(serde_json::to_string_pretty(caps).unwrap())
     }
@@ -562,11 +560,12 @@ impl McpServer {
     fn tool_vbios_info(&self, args: &Value) -> Result<String, String> {
         let device_index = args["device_index"].as_u64().unwrap_or(0) as u32;
         let manager = gpu_manager().read();
-        
-        let device = manager.devices()
+
+        let device = manager
+            .devices()
             .get(device_index as usize)
             .ok_or_else(|| format!("GPU {} not found", device_index))?;
-        
+
         match &device.vbios_version {
             Some(ver) => Ok(format!("vBIOS Version: {}\n\nNote: Detailed vBIOS parsing requires additional implementation.", ver)),
             None => Ok("vBIOS version not available. This may require admin privileges or NVAPI/ADL initialization.".into()),
@@ -582,23 +581,23 @@ impl McpServer {
         let power_limit = args["power_limit_watts"]
             .as_f64()
             .ok_or("power_limit_watts is required")?;
-        
+
         // Safety check
         if power_limit < 50.0 || power_limit > 500.0 {
             return Err("Power limit must be between 50W and 500W for safety".into());
         }
-        
+
         // TODO: Implement via NVAPI/ADL
         Ok(format!("Power limit control not yet implemented.\n\nRequested: {}W\n\nThis feature will use NVAPI (NVIDIA) or ADL (AMD) to safely adjust power limits.", power_limit))
     }
 
     fn tool_gpu_set_fan_curve(&self, args: &Value) -> Result<String, String> {
         let curve = &args["curve"];
-        
+
         if !curve.is_array() {
             return Err("curve must be an array of {temp_c, speed_percent} points".into());
         }
-        
+
         // TODO: Implement via NVAPI/ADL
         Ok(format!("Fan curve control not yet implemented.\n\nRequested curve: {:?}\n\nThis feature will use NVAPI (NVIDIA) or ADL (AMD) to set custom fan curves.", curve))
     }
@@ -606,7 +605,7 @@ impl McpServer {
     fn tool_benchmark_decode(&self, args: &Value) -> Result<String, String> {
         let codec = args["codec"].as_str().unwrap_or("h264");
         let resolution = args["resolution"].as_str().unwrap_or("1080p");
-        
+
         // TODO: Implement real benchmarks
         Ok(format!(
             "Decode benchmark not yet implemented.\n\n\
@@ -627,7 +626,8 @@ impl McpServer {
             - Read bandwidth (GB/s)\n\
             - Write bandwidth (GB/s)\n\
             - Copy bandwidth (GB/s)\n\
-            - Latency (ns)".into())
+            - Latency (ns)"
+            .into())
     }
 
     // ========================================================================
@@ -637,8 +637,10 @@ impl McpServer {
     fn tool_camera_add(&self, args: &Value) -> Result<String, String> {
         let id = args["id"].as_str().ok_or("id is required")?;
         let name = args["name"].as_str().ok_or("name is required")?;
-        let source_type = args["source_type"].as_str().ok_or("source_type is required")?;
-        
+        let source_type = args["source_type"]
+            .as_str()
+            .ok_or("source_type is required")?;
+
         let source_desc = match source_type {
             "rtsp" => {
                 let url = args["url"].as_str().unwrap_or("rtsp://...");
@@ -659,9 +661,9 @@ impl McpServer {
             }
             _ => return Err(format!("Unknown source type: {}", source_type)),
         };
-        
+
         let position = args["position"].as_str().unwrap_or("bottom_right");
-        
+
         Ok(format!(
             "Camera added:\n\n\
              ID: {}\n\
@@ -677,12 +679,16 @@ impl McpServer {
         // TODO: Get from SecurityCameraManager
         Ok("Security Cameras:\n\n\
             No cameras configured.\n\n\
-            Use camera_add to add RTSP, USB, ONVIF, NDI, or HDMI cameras.".into())
+            Use camera_add to add RTSP, USB, ONVIF, NDI, or HDMI cameras."
+            .into())
     }
 
     fn tool_camera_enable(&self, args: &Value) -> Result<String, String> {
         let id = args["id"].as_str().ok_or("id is required")?;
-        Ok(format!("Camera '{}' PiP feed enabled.\n\nNote: Maximum 4 simultaneous feeds.", id))
+        Ok(format!(
+            "Camera '{}' PiP feed enabled.\n\nNote: Maximum 4 simultaneous feeds.",
+            id
+        ))
     }
 
     fn tool_camera_disable(&self, args: &Value) -> Result<String, String> {
@@ -713,7 +719,8 @@ impl McpServer {
             - WindowedUnfocused: 480p + kornia upscale (75% savings)\n\
             - Hidden: Audio only (95% savings)\n\
             - PictureInPicture: 360p (90% savings)\n\
-            - SecurityCamPip: Per-camera allocation (85% savings)".into())
+            - SecurityCamPip: Per-camera allocation (85% savings)"
+            .into())
     }
 
     fn tool_bandwidth_stats(&self) -> Result<String, String> {
@@ -726,7 +733,8 @@ impl McpServer {
             - WindowedFocused: 0%\n\
             - WindowedUnfocused: 0%\n\
             - Hidden: 0%\n\
-            - Paused: 0%".into())
+            - Paused: 0%"
+            .into())
     }
 
     // ========================================================================
@@ -735,13 +743,16 @@ impl McpServer {
 
     fn tool_player_open(&self, args: &Value) -> Result<String, String> {
         let path = args["path"].as_str().ok_or("path is required")?;
-        Ok(format!("Opening video: {}\n\nPlayer control not yet connected.", path))
+        Ok(format!(
+            "Opening video: {}\n\nPlayer control not yet connected.",
+            path
+        ))
     }
 
     fn tool_player_control(&self, args: &Value) -> Result<String, String> {
         let action = args["action"].as_str().ok_or("action is required")?;
         let value = args["value"].as_f64();
-        
+
         match action {
             "play" => Ok("Playback started.".into()),
             "pause" => Ok("Playback paused.".into()),
@@ -761,7 +772,7 @@ impl McpServer {
     fn tool_player_pipeline(&self, args: &Value) -> Result<String, String> {
         let pipeline = args["pipeline"].as_str().ok_or("pipeline is required")?;
         let script = args["script"].as_str();
-        
+
         let desc = match pipeline {
             "direct" => "Direct passthrough (no processing)".into(),
             "avisynth" => "AviSynth filter chain (DLL FFI)".into(),
@@ -771,13 +782,17 @@ impl McpServer {
             "sidecar" => "External sidecar process (IPC)".into(),
             _ => return Err(format!("Unknown pipeline: {}", pipeline)),
         };
-        
+
         let mut output = format!("Pipeline set to: {}\n{}\n", pipeline, desc);
-        
+
         if let Some(s) = script {
-            output.push_str(&format!("\nFilter script ({} chars):\n{}", s.len(), &s[..s.len().min(200)]));
+            output.push_str(&format!(
+                "\nFilter script ({} chars):\n{}",
+                s.len(),
+                &s[..s.len().min(200)]
+            ));
         }
-        
+
         Ok(output)
     }
 }
@@ -791,12 +806,15 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("slain_mcp=info".parse()?)
+                .add_directive("slain_mcp=info".parse()?),
         )
         .with_writer(io::stderr)
         .init();
 
-    info!("SLAIN MCP Server v{} starting...", env!("CARGO_PKG_VERSION"));
+    info!(
+        "SLAIN MCP Server v{} starting...",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Initialize GPU manager
     {
@@ -837,7 +855,7 @@ fn main() -> Result<()> {
 
         let response = server.handle_request(request);
         let response_json = serde_json::to_string(&response)?;
-        
+
         debug!("Sending: {}", response_json);
         writeln!(stdout, "{}", response_json)?;
         stdout.flush()?;

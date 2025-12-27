@@ -20,8 +20,8 @@ pub struct MediaItem {
     pub year: Option<u32>,
     pub media_type: MediaType,
     pub source: MediaSource,
-    pub path: Option<String>,           // Local file path
-    pub stream_url: Option<String>,     // Remote stream URL
+    pub path: Option<String>,       // Local file path
+    pub stream_url: Option<String>, // Remote stream URL
     pub metadata: Option<MediaMetadata>,
 }
 
@@ -37,7 +37,7 @@ pub enum MediaType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaSource {
-    Local,              // Local file
+    Local, // Local file
     Plex { server_id: String },
     Jellyfin { server_id: String },
     Emby { server_id: String },
@@ -93,17 +93,24 @@ impl TmdbClient {
     }
 
     /// Search for movies
-    pub async fn search_movie(&self, query: &str, year: Option<u32>) -> Result<Vec<TmdbMovie>, String> {
+    pub async fn search_movie(
+        &self,
+        query: &str,
+        year: Option<u32>,
+    ) -> Result<Vec<TmdbMovie>, String> {
         let mut url = format!(
             "{}/search/movie?api_key={}&query={}",
-            TMDB_API_BASE, self.api_key, urlencoding::encode(query)
+            TMDB_API_BASE,
+            self.api_key,
+            urlencoding::encode(query)
         );
-        
+
         if let Some(y) = year {
             url.push_str(&format!("&year={}", y));
         }
 
-        let response: TmdbSearchResponse = self.client
+        let response: TmdbSearchResponse = self
+            .client
             .get(&url)
             .send()
             .await
@@ -138,31 +145,45 @@ impl TmdbClient {
             tmdb_id: Some(details.id),
             imdb_id: details.imdb_id.clone(),
             overview: details.overview.clone(),
-            poster_url: details.poster_path.as_ref().map(|p| 
-                format!("{}/w500{}", TMDB_IMAGE_BASE, p)
-            ),
-            backdrop_url: details.backdrop_path.as_ref().map(|p|
-                format!("{}/w1280{}", TMDB_IMAGE_BASE, p)
-            ),
+            poster_url: details
+                .poster_path
+                .as_ref()
+                .map(|p| format!("{}/w500{}", TMDB_IMAGE_BASE, p)),
+            backdrop_url: details
+                .backdrop_path
+                .as_ref()
+                .map(|p| format!("{}/w1280{}", TMDB_IMAGE_BASE, p)),
             rating: details.vote_average,
             runtime_minutes: details.runtime,
             genres: details.genres.iter().map(|g| g.name.clone()).collect(),
-            cast: details.credits.as_ref().map(|c| {
-                c.cast.iter().take(10).map(|m| CastMember {
-                    name: m.name.clone(),
-                    character: m.character.clone(),
-                    profile_url: m.profile_path.as_ref().map(|p|
-                        format!("{}/w185{}", TMDB_IMAGE_BASE, p)
-                    ),
-                }).collect()
-            }).unwrap_or_default(),
+            cast: details
+                .credits
+                .as_ref()
+                .map(|c| {
+                    c.cast
+                        .iter()
+                        .take(10)
+                        .map(|m| CastMember {
+                            name: m.name.clone(),
+                            character: m.character.clone(),
+                            profile_url: m
+                                .profile_path
+                                .as_ref()
+                                .map(|p| format!("{}/w185{}", TMDB_IMAGE_BASE, p)),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             director: details.credits.as_ref().and_then(|c| {
-                c.crew.iter().find(|m| m.job.as_deref() == Some("Director"))
+                c.crew
+                    .iter()
+                    .find(|m| m.job.as_deref() == Some("Director"))
                     .map(|m| m.name.clone())
             }),
             release_date: details.release_date.clone(),
             trailer_url: details.videos.as_ref().and_then(|v| {
-                v.results.iter()
+                v.results
+                    .iter()
                     .find(|t| t.site == "YouTube" && t.type_field == "Trailer")
                     .map(|t| format!("https://youtube.com/watch?v={}", t.key))
             }),
@@ -244,8 +265,8 @@ pub struct TmdbVideo {
 // ============================================================================
 
 const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
-    "ts", "mts", "m2ts", "vob", "3gp", "ogv",
+    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "ts", "mts", "m2ts", "vob", "3gp",
+    "ogv",
 ];
 
 pub struct MediaScanner {
@@ -262,13 +283,13 @@ impl MediaScanner {
     /// Scan a directory for video files
     pub async fn scan_directory(&self, path: &str) -> Result<Vec<MediaItem>, String> {
         let mut items = Vec::new();
-        
-        let entries = std::fs::read_dir(path)
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        let entries =
+            std::fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
-            
+
             if path.is_file() {
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
@@ -279,9 +300,8 @@ impl MediaScanner {
                 }
             } else if path.is_dir() {
                 // Recurse into subdirectories
-                if let Ok(sub_items) = Box::pin(self.scan_directory(
-                    &path.to_string_lossy()
-                )).await {
+                if let Ok(sub_items) = Box::pin(self.scan_directory(&path.to_string_lossy())).await
+                {
                     items.extend(sub_items);
                 }
             }
@@ -292,7 +312,8 @@ impl MediaScanner {
 
     /// Create media item from file, try to scrape metadata
     async fn create_item_from_file(&self, path: &PathBuf) -> Result<MediaItem, String> {
-        let filename = path.file_stem()
+        let filename = path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
@@ -331,7 +352,10 @@ fn parse_movie_filename(filename: &str) -> (String, Option<u32>) {
     // Try to find year in parentheses: "Movie Name (2023)"
     let re_parens = regex::Regex::new(r"^(.+?)\s*\((\d{4})\)").unwrap();
     if let Some(caps) = re_parens.captures(filename) {
-        let title = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+        let title = caps
+            .get(1)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         let year = caps.get(2).and_then(|m| m.as_str().parse().ok());
         return (title, year);
     }
@@ -339,7 +363,8 @@ fn parse_movie_filename(filename: &str) -> (String, Option<u32>) {
     // Try dot-separated: "Movie.Name.2023.1080p"
     let re_dots = regex::Regex::new(r"^(.+?)\.(\d{4})\.").unwrap();
     if let Some(caps) = re_dots.captures(filename) {
-        let title = caps.get(1)
+        let title = caps
+            .get(1)
             .map(|m| m.as_str().replace('.', " "))
             .unwrap_or_default();
         let year = caps.get(2).and_then(|m| m.as_str().parse().ok());
@@ -492,18 +517,22 @@ pub fn get_free_sources() -> Vec<FreeStreamSource> {
 // Public Rust API
 // ============================================================================
 
-
-pub async fn scan_media_folder(path: String, tmdb_key: Option<String>) -> Result<Vec<MediaItem>, String> {
+pub async fn scan_media_folder(
+    path: String,
+    tmdb_key: Option<String>,
+) -> Result<Vec<MediaItem>, String> {
     let scanner = MediaScanner::new(tmdb_key.as_deref());
     scanner.scan_directory(&path).await
 }
 
-
-pub async fn search_tmdb(query: String, year: Option<u32>, api_key: String) -> Result<Vec<TmdbMovie>, String> {
+pub async fn search_tmdb(
+    query: String,
+    year: Option<u32>,
+    api_key: String,
+) -> Result<Vec<TmdbMovie>, String> {
     let client = TmdbClient::new(&api_key);
     client.search_movie(&query, year).await
 }
-
 
 pub async fn get_movie_metadata(tmdb_id: u64, api_key: String) -> Result<MediaMetadata, String> {
     let client = TmdbClient::new(&api_key);
@@ -511,20 +540,22 @@ pub async fn get_movie_metadata(tmdb_id: u64, api_key: String) -> Result<MediaMe
     Ok(TmdbClient::to_metadata(&details))
 }
 
-
 pub fn get_free_streaming_sources() -> Vec<FreeStreamSource> {
     get_free_sources()
 }
 
-
-pub async fn connect_plex(address: String, port: u16, token: String) -> Result<Vec<PlexLibrary>, String> {
+pub async fn connect_plex(
+    address: String,
+    port: u16,
+    token: String,
+) -> Result<Vec<PlexLibrary>, String> {
     let server = PlexServer {
         name: "My Plex".to_string(),
         address,
         port,
         token,
     };
-    
+
     let client = PlexClient::new(server);
     client.get_libraries().await
 }

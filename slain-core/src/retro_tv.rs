@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub struct RetroTvSettings {
     pub enabled: bool,
     pub effect_type: RetroEffectType,
-    pub intensity: f32,         // 0.0 - 1.0
+    pub intensity: f32, // 0.0 - 1.0
     pub scanlines: ScanlineSettings,
     pub static_noise: StaticNoiseSettings,
     pub crt: CrtSettings,
@@ -53,17 +53,17 @@ impl Default for RetroTvSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum RetroEffectType {
     None,
-    StaticSnow,         // Full screen static (no signal)
-    LightStatic,        // Subtle static overlay
-    ChannelChange,      // Brief static burst
-    VhsTracking,        // VHS tracking lines
-    VhsPause,           // VHS pause effect with noise bars
-    CrtOnly,            // Just scanlines + curvature
-    FullRetro,          // Everything combined
-    Broadcast1960s,     // Black & white, heavy scan
-    Broadcast1980s,     // Color with VHS artifacts
-    HorrorGlitch,       // Creepy distortion
-    Vaporwave,          // Aesthetic purple/cyan
+    StaticSnow,     // Full screen static (no signal)
+    LightStatic,    // Subtle static overlay
+    ChannelChange,  // Brief static burst
+    VhsTracking,    // VHS tracking lines
+    VhsPause,       // VHS pause effect with noise bars
+    CrtOnly,        // Just scanlines + curvature
+    FullRetro,      // Everything combined
+    Broadcast1960s, // Black & white, heavy scan
+    Broadcast1980s, // Color with VHS artifacts
+    HorrorGlitch,   // Creepy distortion
+    Vaporwave,      // Aesthetic purple/cyan
 }
 
 // ============================================================================
@@ -73,10 +73,10 @@ pub enum RetroEffectType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanlineSettings {
     pub enabled: bool,
-    pub thickness: f32,         // 1.0 - 4.0
-    pub opacity: f32,           // 0.0 - 1.0
-    pub speed: f32,             // Scroll speed (0 = static)
-    pub interlaced: bool,       // Alternating field flicker
+    pub thickness: f32,   // 1.0 - 4.0
+    pub opacity: f32,     // 0.0 - 1.0
+    pub speed: f32,       // Scroll speed (0 = static)
+    pub interlaced: bool, // Alternating field flicker
 }
 
 impl Default for ScanlineSettings {
@@ -94,11 +94,11 @@ impl Default for ScanlineSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticNoiseSettings {
     pub enabled: bool,
-    pub density: f32,           // How much noise (0.0 - 1.0)
-    pub brightness: f32,        // Noise brightness
-    pub colored: bool,          // Color or B&W noise
-    pub animate: bool,          // Animated or frozen
-    pub speed: f32,             // Animation speed
+    pub density: f32,    // How much noise (0.0 - 1.0)
+    pub brightness: f32, // Noise brightness
+    pub colored: bool,   // Color or B&W noise
+    pub animate: bool,   // Animated or frozen
+    pub speed: f32,      // Animation speed
 }
 
 impl Default for StaticNoiseSettings {
@@ -117,12 +117,12 @@ impl Default for StaticNoiseSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrtSettings {
     pub enabled: bool,
-    pub curvature: f32,         // Screen curve amount
-    pub vignette: f32,          // Edge darkening
-    pub corner_radius: f32,     // Rounded corners
-    pub bloom: f32,             // Glow/bloom effect
+    pub curvature: f32,            // Screen curve amount
+    pub vignette: f32,             // Edge darkening
+    pub corner_radius: f32,        // Rounded corners
+    pub bloom: f32,                // Glow/bloom effect
     pub chromatic_aberration: f32, // RGB split
-    pub flicker: f32,           // Brightness flicker
+    pub flicker: f32,              // Brightness flicker
 }
 
 impl Default for CrtSettings {
@@ -142,12 +142,12 @@ impl Default for CrtSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VhsSettings {
     pub enabled: bool,
-    pub tracking_error: f32,    // Horizontal distortion
-    pub head_switching: f32,    // Bottom noise bar
-    pub color_bleeding: f32,    // Color smear
-    pub tape_noise: f32,        // Random noise lines
-    pub jitter: f32,            // Horizontal jitter
-    pub snow_bands: bool,       // Rolling snow bands
+    pub tracking_error: f32, // Horizontal distortion
+    pub head_switching: f32, // Bottom noise bar
+    pub color_bleeding: f32, // Color smear
+    pub tape_noise: f32,     // Random noise lines
+    pub jitter: f32,         // Horizontal jitter
+    pub snow_bands: bool,    // Rolling snow bands
 }
 
 impl Default for VhsSettings {
@@ -166,7 +166,7 @@ impl Default for VhsSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorSettings {
-    pub saturation: f32,        // 0.0 = B&W, 1.0 = normal
+    pub saturation: f32, // 0.0 = B&W, 1.0 = normal
     pub brightness: f32,
     pub contrast: f32,
     pub tint: Option<[f32; 3]>, // RGB tint overlay
@@ -299,7 +299,7 @@ impl RetroTvSettings {
             effect_type: RetroEffectType::Broadcast1960s,
             intensity: 0.7,
             color: ColorSettings {
-                saturation: 0.0,  // Black & white
+                saturation: 0.0, // Black & white
                 contrast: 1.2,
                 brightness: 0.95,
                 ..Default::default()
@@ -360,7 +360,7 @@ impl RetroTvSettings {
             intensity: 0.6,
             color: ColorSettings {
                 saturation: 1.3,
-                tint: Some([0.9, 0.7, 1.0]),  // Purple tint
+                tint: Some([0.9, 0.7, 1.0]), // Purple tint
                 ..Default::default()
             },
             scanlines: ScanlineSettings {
@@ -420,7 +420,7 @@ impl RetroTvSettings {
             intensity: 0.6,
             color: ColorSettings {
                 saturation: 0.0,
-                tint: Some([0.2, 1.0, 0.3]),  // Green
+                tint: Some([0.2, 1.0, 0.3]), // Green
                 phosphor_glow: true,
                 ..Default::default()
             },
@@ -443,7 +443,7 @@ impl RetroTvSettings {
     /// Amber phosphor terminal
     pub fn amber_phosphor() -> Self {
         let mut settings = Self::green_phosphor();
-        settings.color.tint = Some([1.0, 0.7, 0.2]);  // Amber
+        settings.color.tint = Some([1.0, 0.7, 0.2]); // Amber
         settings
     }
 }
@@ -679,22 +679,35 @@ fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 // Public Rust API
 // ============================================================================
 
-
 pub fn get_retro_presets() -> Vec<(String, RetroTvSettings)> {
     vec![
         ("No Signal".to_string(), RetroTvSettings::no_signal()),
-        ("Channel Change".to_string(), RetroTvSettings::channel_change()),
+        (
+            "Channel Change".to_string(),
+            RetroTvSettings::channel_change(),
+        ),
         ("VHS Tape".to_string(), RetroTvSettings::vhs_tape()),
         ("VHS Pause".to_string(), RetroTvSettings::vhs_pause()),
-        ("1960s Broadcast".to_string(), RetroTvSettings::retro_1960s()),
+        (
+            "1960s Broadcast".to_string(),
+            RetroTvSettings::retro_1960s(),
+        ),
         ("CRT Monitor".to_string(), RetroTvSettings::crt_monitor()),
         ("Vaporwave".to_string(), RetroTvSettings::vaporwave()),
-        ("Horror Glitch".to_string(), RetroTvSettings::horror_glitch()),
-        ("Green Phosphor".to_string(), RetroTvSettings::green_phosphor()),
-        ("Amber Phosphor".to_string(), RetroTvSettings::amber_phosphor()),
+        (
+            "Horror Glitch".to_string(),
+            RetroTvSettings::horror_glitch(),
+        ),
+        (
+            "Green Phosphor".to_string(),
+            RetroTvSettings::green_phosphor(),
+        ),
+        (
+            "Amber Phosphor".to_string(),
+            RetroTvSettings::amber_phosphor(),
+        ),
     ]
 }
-
 
 pub fn get_retro_shader() -> String {
     RETRO_TV_SHADER.to_string()

@@ -82,11 +82,11 @@ pub struct VideoInfo {
 }
 
 /// DirectShow filter graph using LAV Filters
-/// 
+///
 /// NOTE: This is a stub implementation. Full DirectShow COM integration
 /// is complex and requires careful handling of COM threading, reference
 /// counting, and interface querying.
-/// 
+///
 /// For working LAV-style CUVID decoding, consider using:
 /// 1. FFmpeg with -hwaccel cuvid (same underlying NVIDIA decoder)
 /// 2. Direct NVDEC API (what we have in nvdec.rs)
@@ -111,11 +111,11 @@ impl LavFilterGraph {
     pub fn new() -> GraphResult<Self> {
         // Check if LAV Filters are installed
         let lav_installed = check_lav_installed();
-        
+
         if !lav_installed {
             tracing::warn!("LAV Filters not detected. Install from: https://github.com/Nevcairiel/LAVFilters/releases");
         }
-        
+
         Ok(Self {
             frame_buffer: FrameBuffer::new(8),
             state: PlayState::Stopped,
@@ -125,43 +125,45 @@ impl LavFilterGraph {
             lav_installed,
         })
     }
-    
+
     /// Create with custom LAV settings
     pub fn with_settings(settings: LavVideoSettings) -> GraphResult<Self> {
         let mut graph = Self::new()?;
         graph.lav_settings = settings;
         Ok(graph)
     }
-    
+
     /// Check if LAV Filters are available
     pub fn is_available(&self) -> bool {
         self.lav_installed
     }
-    
+
     /// Open a media file
-    /// 
+    ///
     /// NOTE: This is a stub. Full implementation requires COM interop.
     pub fn open<P: AsRef<Path>>(&mut self, path: P) -> GraphResult<()> {
         let path = path.as_ref();
-        
+
         if !path.exists() {
             return Err(GraphError::FileNotFound(path.display().to_string()));
         }
-        
+
         if !self.lav_installed {
             return Err(GraphError::LavNotInstalled);
         }
-        
+
         self.file_path = Some(path.display().to_string());
-        
+
         // Stub: Would build DirectShow filter graph here
         // For now, just log what we would do
         tracing::info!("LavFilterGraph::open({:?})", path);
-        tracing::info!("  Settings: hw_accel={:?}, deint={:?}, hw_deint_mode={}", 
+        tracing::info!(
+            "  Settings: hw_accel={:?}, deint={:?}, hw_deint_mode={}",
             self.lav_settings.hw_accel,
             self.lav_settings.deint_mode,
-            self.lav_settings.hw_deint_mode);
-        
+            self.lav_settings.hw_deint_mode
+        );
+
         // Set dummy video info
         self.video_info = Some(VideoInfo {
             width: 1920,
@@ -170,80 +172,80 @@ impl LavFilterGraph {
             duration_ms: 0,
             codec: "H.264".to_string(),
         });
-        
+
         Err(GraphError::NotImplemented(
-            "DirectShow COM integration not yet implemented. Use NVDEC decoder instead.".into()
+            "DirectShow COM integration not yet implemented. Use NVDEC decoder instead.".into(),
         ))
     }
-    
+
     /// Start playback
     pub fn play(&mut self) -> GraphResult<()> {
         self.state = PlayState::Playing;
         Err(GraphError::NotImplemented("play".into()))
     }
-    
+
     /// Pause playback
     pub fn pause(&mut self) -> GraphResult<()> {
         self.state = PlayState::Paused;
         Err(GraphError::NotImplemented("pause".into()))
     }
-    
+
     /// Stop playback
     pub fn stop(&mut self) -> GraphResult<()> {
         self.state = PlayState::Stopped;
         Ok(())
     }
-    
+
     /// Seek to position in milliseconds
     pub fn seek(&mut self, _position_ms: u64) -> GraphResult<()> {
         Err(GraphError::NotImplemented("seek".into()))
     }
-    
+
     /// Get current position in milliseconds
     pub fn position(&self) -> u64 {
         0
     }
-    
+
     /// Get duration in milliseconds
     pub fn duration(&self) -> u64 {
         self.video_info.as_ref().map(|i| i.duration_ms).unwrap_or(0)
     }
-    
+
     /// Get current state
     pub fn state(&self) -> PlayState {
         self.state
     }
-    
+
     /// Get video info
     pub fn video_info(&self) -> Option<&VideoInfo> {
         self.video_info.as_ref()
     }
-    
+
     /// Get frame buffer for captured frames
     pub fn frame_buffer(&self) -> &Arc<FrameBuffer> {
         &self.frame_buffer
     }
-    
+
     /// Pop a decoded frame
     pub fn pop_frame(&self) -> Option<CapturedFrame> {
         self.frame_buffer.pop()
     }
-    
+
     /// Check for and process events
     pub fn process_events(&mut self) -> Option<EventCode> {
         None
     }
-    
+
     /// Check if playback has completed
     pub fn is_complete(&mut self) -> bool {
         false
     }
-    
+
     /// Get LAV settings
     pub fn settings(&self) -> &LavVideoSettings {
         &self.lav_settings
     }
-    
+
     /// Update LAV settings
     pub fn set_settings(&mut self, settings: LavVideoSettings) {
         self.lav_settings = settings;
@@ -264,67 +266,67 @@ impl LavPlayer {
             volume: 1.0,
         })
     }
-    
+
     /// Check if LAV is available
     pub fn is_available(&self) -> bool {
         self.graph.is_available()
     }
-    
+
     /// Open a file
     pub fn open<P: AsRef<Path>>(&mut self, path: P) -> GraphResult<()> {
         self.graph.open(path)
     }
-    
+
     /// Play
     pub fn play(&mut self) -> GraphResult<()> {
         self.graph.play()
     }
-    
+
     /// Pause
     pub fn pause(&mut self) -> GraphResult<()> {
         self.graph.pause()
     }
-    
+
     /// Stop
     pub fn stop(&mut self) -> GraphResult<()> {
         self.graph.stop()
     }
-    
+
     /// Seek
     pub fn seek(&mut self, ms: u64) -> GraphResult<()> {
         self.graph.seek(ms)
     }
-    
+
     /// Position
     pub fn position(&self) -> u64 {
         self.graph.position()
     }
-    
+
     /// Duration
     pub fn duration(&self) -> u64 {
         self.graph.duration()
     }
-    
+
     /// Get frame
     pub fn get_frame(&self) -> Option<CapturedFrame> {
         self.graph.pop_frame()
     }
-    
+
     /// Is complete
     pub fn is_complete(&mut self) -> bool {
         self.graph.is_complete()
     }
-    
+
     /// Video info
     pub fn video_info(&self) -> Option<&VideoInfo> {
         self.graph.video_info()
     }
-    
+
     /// Set volume
     pub fn set_volume(&mut self, vol: f32) {
         self.volume = vol.clamp(0.0, 1.0);
     }
-    
+
     /// Get volume
     pub fn volume(&self) -> f32 {
         self.volume

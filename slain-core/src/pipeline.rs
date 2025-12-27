@@ -95,22 +95,22 @@ pub enum FrameFormat {
 pub trait Pipeline: Send + Sync {
     /// Get pipeline type
     fn kind(&self) -> PipelineKind;
-    
+
     /// Check if pipeline is available on this system
     fn is_available(&self) -> bool;
-    
+
     /// Initialize with a filter script/configuration
     fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError>;
-    
+
     /// Process a frame through the pipeline
     fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError>;
-    
+
     /// Flush any buffered frames
     fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError>;
-    
+
     /// Reset pipeline state
     fn reset(&mut self);
-    
+
     /// Get pipeline name for display
     fn name(&self) -> &str;
 }
@@ -141,7 +141,7 @@ pub struct PipelineConfig {
 // ============================================================================
 
 /// AviSynth pipeline - processes frames via in-memory script
-/// 
+///
 /// Key: Uses avs_invoke("Eval", script_string) to evaluate scripts WITHOUT files
 #[cfg(feature = "avisynth")]
 pub struct AviSynthPipeline {
@@ -165,35 +165,41 @@ impl AviSynthPipeline {
 
 #[cfg(feature = "avisynth")]
 impl Pipeline for AviSynthPipeline {
-    fn kind(&self) -> PipelineKind { PipelineKind::AviSynth }
-    
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::AviSynth
+    }
+
     fn is_available(&self) -> bool {
         unsafe { Library::new("AviSynth.dll").is_ok() }
     }
-    
+
     fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError> {
-        let lib = unsafe { Library::new("AviSynth.dll") }
-            .map_err(|_| PipelineError::LibraryError(
-                "AviSynth not found. Install AviSynth+ from https://avs-plus.net/".into()
-            ))?;
-        
+        let lib = unsafe { Library::new("AviSynth.dll") }.map_err(|_| {
+            PipelineError::LibraryError(
+                "AviSynth not found. Install AviSynth+ from https://avs-plus.net/".into(),
+            )
+        })?;
+
         // The script is passed as a STRING to avs_invoke("Eval", script)
         // No .avs file created!
-        let _full_script = format!(r#"
+        let _full_script = format!(
+            r#"
 # SLAIN frame source injection point
 global slain_width = {}
 global slain_height = {}
 # User filter chain:
 {}
-"#, config.width, config.height, config.script);
-        
+"#,
+            config.width, config.height, config.script
+        );
+
         // TODO: FFI calls to avs_create_script_environment, avs_invoke
-        
+
         self.lib = Some(lib);
         self.initialized = true;
         Ok(())
     }
-    
+
     fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         if !self.initialized {
             return Err(PipelineError::NotAvailable("Not initialized".into()));
@@ -201,10 +207,16 @@ global slain_height = {}
         // TODO: avs_get_frame FFI
         Ok(frame)
     }
-    
-    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
-    fn reset(&mut self) { self.initialized = false; }
-    fn name(&self) -> &str { "AviSynth" }
+
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> {
+        Ok(vec![])
+    }
+    fn reset(&mut self) {
+        self.initialized = false;
+    }
+    fn name(&self) -> &str {
+        "AviSynth"
+    }
 }
 
 // ============================================================================
@@ -212,7 +224,7 @@ global slain_height = {}
 // ============================================================================
 
 /// VapourSynth pipeline - Python scripts evaluated in memory
-/// 
+///
 /// Key: Uses vsscript_evaluateBuffer() to run Python code WITHOUT files
 #[cfg(feature = "vapoursynth")]
 pub struct VapourSynthPipeline {
@@ -223,52 +235,71 @@ pub struct VapourSynthPipeline {
 #[cfg(feature = "vapoursynth")]
 impl VapourSynthPipeline {
     pub fn new() -> Self {
-        Self { lib: None, initialized: false }
+        Self {
+            lib: None,
+            initialized: false,
+        }
     }
 }
 
 #[cfg(feature = "vapoursynth")]
 impl Pipeline for VapourSynthPipeline {
-    fn kind(&self) -> PipelineKind { PipelineKind::VapourSynth }
-    
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::VapourSynth
+    }
+
     fn is_available(&self) -> bool {
         #[cfg(windows)]
-        { unsafe { Library::new("vapoursynth.dll").is_ok() } }
+        {
+            unsafe { Library::new("vapoursynth.dll").is_ok() }
+        }
         #[cfg(not(windows))]
-        { unsafe { Library::new("libvapoursynth.so").is_ok() } }
+        {
+            unsafe { Library::new("libvapoursynth.so").is_ok() }
+        }
     }
-    
+
     fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError> {
         #[cfg(windows)]
         let lib_name = "vsscript.dll";
         #[cfg(not(windows))]
         let lib_name = "libvsscript.so";
-        
-        let lib = unsafe { Library::new(lib_name) }
-            .map_err(|_| PipelineError::LibraryError(
-                "VapourSynth not found. Install from https://vapoursynth.com/".into()
-            ))?;
-        
+
+        let lib = unsafe { Library::new(lib_name) }.map_err(|_| {
+            PipelineError::LibraryError(
+                "VapourSynth not found. Install from https://vapoursynth.com/".into(),
+            )
+        })?;
+
         // Script passed as buffer to vsscript_evaluateBuffer()
-        let _script = format!(r#"
+        let _script = format!(
+            r#"
 import vapoursynth as vs
 core = vs.core
 # User filters:
 {}
-"#, config.script);
-        
+"#,
+            config.script
+        );
+
         self.lib = Some(lib);
         self.initialized = true;
         Ok(())
     }
-    
+
     fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         Ok(frame)
     }
-    
-    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
-    fn reset(&mut self) { self.initialized = false; }
-    fn name(&self) -> &str { "VapourSynth" }
+
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> {
+        Ok(vec![])
+    }
+    fn reset(&mut self) {
+        self.initialized = false;
+    }
+    fn name(&self) -> &str {
+        "VapourSynth"
+    }
 }
 
 // ============================================================================
@@ -276,7 +307,7 @@ core = vs.core
 // ============================================================================
 
 /// Vulkan pipeline - Pure Rust via wgpu
-/// 
+///
 /// WGSL shaders compiled at runtime, no external dependencies
 #[cfg(feature = "vulkan-compute")]
 pub struct VulkanPipeline {
@@ -289,7 +320,7 @@ impl VulkanPipeline {
     pub fn new() -> Self {
         Self { initialized: false }
     }
-    
+
     /// Default WGSL shader for color processing
     pub const DEFAULT_SHADER: &'static str = r#"
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -314,22 +345,32 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 #[cfg(feature = "vulkan-compute")]
 impl Pipeline for VulkanPipeline {
-    fn kind(&self) -> PipelineKind { PipelineKind::Vulkan }
-    fn is_available(&self) -> bool { true } // wgpu always available
-    
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::Vulkan
+    }
+    fn is_available(&self) -> bool {
+        true
+    } // wgpu always available
+
     fn init(&mut self, _config: &PipelineConfig) -> Result<(), PipelineError> {
         // TODO: wgpu device/queue/pipeline setup
         self.initialized = true;
         Ok(())
     }
-    
+
     fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         Ok(frame)
     }
-    
-    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
-    fn reset(&mut self) { self.initialized = false; }
-    fn name(&self) -> &str { "Vulkan Compute" }
+
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> {
+        Ok(vec![])
+    }
+    fn reset(&mut self) {
+        self.initialized = false;
+    }
+    fn name(&self) -> &str {
+        "Vulkan Compute"
+    }
 }
 
 // ============================================================================
@@ -337,7 +378,7 @@ impl Pipeline for VulkanPipeline {
 // ============================================================================
 
 /// CUDA pipeline - PTX kernels loaded from strings
-/// 
+///
 /// Key: cuModuleLoadData() takes PTX as a string, no .cu or .ptx files!
 #[cfg(feature = "cuda")]
 pub struct CudaPipeline {
@@ -348,9 +389,12 @@ pub struct CudaPipeline {
 #[cfg(feature = "cuda")]
 impl CudaPipeline {
     pub fn new() -> Self {
-        Self { lib: None, initialized: false }
+        Self {
+            lib: None,
+            initialized: false,
+        }
     }
-    
+
     /// Default CUDA kernel (as PTX would be compiled from this)
     pub const DEFAULT_KERNEL: &'static str = r#"
 extern "C" __global__ void process_frame(
@@ -373,38 +417,50 @@ extern "C" __global__ void process_frame(
 
 #[cfg(feature = "cuda")]
 impl Pipeline for CudaPipeline {
-    fn kind(&self) -> PipelineKind { PipelineKind::Cuda }
-    
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::Cuda
+    }
+
     fn is_available(&self) -> bool {
         #[cfg(windows)]
-        { unsafe { Library::new("nvcuda.dll").is_ok() } }
+        {
+            unsafe { Library::new("nvcuda.dll").is_ok() }
+        }
         #[cfg(not(windows))]
-        { unsafe { Library::new("libcuda.so").is_ok() } }
+        {
+            unsafe { Library::new("libcuda.so").is_ok() }
+        }
     }
-    
+
     fn init(&mut self, _config: &PipelineConfig) -> Result<(), PipelineError> {
         #[cfg(windows)]
         let lib_name = "nvcuda.dll";
         #[cfg(not(windows))]
         let lib_name = "libcuda.so";
-        
+
         let lib = unsafe { Library::new(lib_name) }
             .map_err(|_| PipelineError::LibraryError("CUDA not found".into()))?;
-        
+
         // TODO: cuInit, cuDeviceGet, cuCtxCreate, cuModuleLoadData (PTX string!)
-        
+
         self.lib = Some(lib);
         self.initialized = true;
         Ok(())
     }
-    
+
     fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         Ok(frame)
     }
-    
-    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
-    fn reset(&mut self) { self.initialized = false; }
-    fn name(&self) -> &str { "CUDA" }
+
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> {
+        Ok(vec![])
+    }
+    fn reset(&mut self) {
+        self.initialized = false;
+    }
+    fn name(&self) -> &str {
+        "CUDA"
+    }
 }
 
 // ============================================================================
@@ -466,7 +522,9 @@ impl SidecarPipeline {
 }
 
 impl Pipeline for SidecarPipeline {
-    fn kind(&self) -> PipelineKind { PipelineKind::Sidecar }
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::Sidecar
+    }
 
     fn is_available(&self) -> bool {
         if let Some(command) = &self.command {
@@ -511,7 +569,9 @@ impl Pipeline for SidecarPipeline {
         Ok(frame)
     }
 
-    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> { Ok(vec![]) }
+    fn flush(&mut self) -> Result<Vec<PipelineFrame>, PipelineError> {
+        Ok(vec![])
+    }
 
     fn reset(&mut self) {
         self.shutdown();
@@ -520,7 +580,9 @@ impl Pipeline for SidecarPipeline {
         self.env.clear();
     }
 
-    fn name(&self) -> &str { "Sidecar" }
+    fn name(&self) -> &str {
+        "Sidecar"
+    }
 }
 
 fn is_executable_on_path(command: &str) -> bool {
@@ -606,39 +668,49 @@ impl PipelineManager {
             cuda: CudaPipeline::new(),
         }
     }
-    
+
     /// Get available pipelines on this system
     #[allow(unused_mut)]
     pub fn available(&self) -> Vec<PipelineKind> {
         let mut list = vec![PipelineKind::Direct];
 
-        if self.sidecar.is_available() { list.push(PipelineKind::Sidecar); }
+        if self.sidecar.is_available() {
+            list.push(PipelineKind::Sidecar);
+        }
 
         #[cfg(feature = "avisynth")]
-        if self.avisynth.is_available() { list.push(PipelineKind::AviSynth); }
-        
+        if self.avisynth.is_available() {
+            list.push(PipelineKind::AviSynth);
+        }
+
         #[cfg(feature = "vapoursynth")]
-        if self.vapoursynth.is_available() { list.push(PipelineKind::VapourSynth); }
-        
+        if self.vapoursynth.is_available() {
+            list.push(PipelineKind::VapourSynth);
+        }
+
         #[cfg(feature = "vulkan-compute")]
-        if self.vulkan.is_available() { list.push(PipelineKind::Vulkan); }
-        
+        if self.vulkan.is_available() {
+            list.push(PipelineKind::Vulkan);
+        }
+
         #[cfg(feature = "cuda")]
-        if self.cuda.is_available() { list.push(PipelineKind::Cuda); }
-        
+        if self.cuda.is_available() {
+            list.push(PipelineKind::Cuda);
+        }
+
         list
     }
-    
+
     /// Set active pipeline
     pub fn set_active(&mut self, kind: PipelineKind) {
         self.active = kind;
     }
-    
+
     /// Get active pipeline kind
     pub fn active(&self) -> PipelineKind {
         self.active
     }
-    
+
     /// Initialize active pipeline
     pub fn init(&mut self, config: &PipelineConfig) -> Result<(), PipelineError> {
         match self.active {
@@ -656,7 +728,7 @@ impl PipelineManager {
             _ => Err(PipelineError::NotAvailable(format!("{:?}", self.active))),
         }
     }
-    
+
     /// Process frame through active pipeline
     pub fn process(&mut self, frame: PipelineFrame) -> Result<PipelineFrame, PipelineError> {
         match self.active {
@@ -677,5 +749,7 @@ impl PipelineManager {
 }
 
 impl Default for PipelineManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

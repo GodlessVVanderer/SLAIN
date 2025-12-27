@@ -12,12 +12,12 @@
 // 5. Feed compressed packets
 // 6. Map decoded surfaces to host memory
 
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::ffi::c_void;
+use std::os::raw::{c_char, c_int, c_uint};
 use std::ptr;
 use std::sync::OnceLock;
-use std::os::raw::{c_int, c_uint, c_char};
-use std::collections::VecDeque;
-use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // VA-API Types (from va/va.h)
@@ -173,19 +173,61 @@ fn get_libva_drm_path() -> &'static str {
 type VaGetDisplayDrmFn = unsafe extern "C" fn(c_int) -> VADisplay;
 type VaInitializeFn = unsafe extern "C" fn(VADisplay, *mut c_int, *mut c_int) -> VAStatus;
 type VaTerminateFn = unsafe extern "C" fn(VADisplay) -> VAStatus;
-type VaQueryConfigProfilesFn = unsafe extern "C" fn(VADisplay, *mut VAProfile, *mut c_int) -> VAStatus;
-type VaQueryConfigEntrypointsFn = unsafe extern "C" fn(VADisplay, VAProfile, *mut VAEntrypoint, *mut c_int) -> VAStatus;
-type VaGetConfigAttributesFn = unsafe extern "C" fn(VADisplay, VAProfile, VAEntrypoint, *mut VAConfigAttrib, c_int) -> VAStatus;
-type VaCreateConfigFn = unsafe extern "C" fn(VADisplay, VAProfile, VAEntrypoint, *mut VAConfigAttrib, c_int, *mut VAConfigID) -> VAStatus;
+type VaQueryConfigProfilesFn =
+    unsafe extern "C" fn(VADisplay, *mut VAProfile, *mut c_int) -> VAStatus;
+type VaQueryConfigEntrypointsFn =
+    unsafe extern "C" fn(VADisplay, VAProfile, *mut VAEntrypoint, *mut c_int) -> VAStatus;
+type VaGetConfigAttributesFn = unsafe extern "C" fn(
+    VADisplay,
+    VAProfile,
+    VAEntrypoint,
+    *mut VAConfigAttrib,
+    c_int,
+) -> VAStatus;
+type VaCreateConfigFn = unsafe extern "C" fn(
+    VADisplay,
+    VAProfile,
+    VAEntrypoint,
+    *mut VAConfigAttrib,
+    c_int,
+    *mut VAConfigID,
+) -> VAStatus;
 type VaDestroyConfigFn = unsafe extern "C" fn(VADisplay, VAConfigID) -> VAStatus;
-type VaCreateSurfacesFn = unsafe extern "C" fn(VADisplay, c_uint, c_uint, c_uint, *mut VASurfaceID, c_uint, *mut VAConfigAttrib, c_uint) -> VAStatus;
+type VaCreateSurfacesFn = unsafe extern "C" fn(
+    VADisplay,
+    c_uint,
+    c_uint,
+    c_uint,
+    *mut VASurfaceID,
+    c_uint,
+    *mut VAConfigAttrib,
+    c_uint,
+) -> VAStatus;
 type VaDestroySurfacesFn = unsafe extern "C" fn(VADisplay, *mut VASurfaceID, c_int) -> VAStatus;
-type VaCreateContextFn = unsafe extern "C" fn(VADisplay, VAConfigID, c_int, c_int, c_int, *mut VASurfaceID, c_int, *mut VAContextID) -> VAStatus;
+type VaCreateContextFn = unsafe extern "C" fn(
+    VADisplay,
+    VAConfigID,
+    c_int,
+    c_int,
+    c_int,
+    *mut VASurfaceID,
+    c_int,
+    *mut VAContextID,
+) -> VAStatus;
 type VaDestroyContextFn = unsafe extern "C" fn(VADisplay, VAContextID) -> VAStatus;
-type VaCreateBufferFn = unsafe extern "C" fn(VADisplay, VAContextID, c_int, c_uint, c_uint, *mut c_void, *mut VABufferID) -> VAStatus;
+type VaCreateBufferFn = unsafe extern "C" fn(
+    VADisplay,
+    VAContextID,
+    c_int,
+    c_uint,
+    c_uint,
+    *mut c_void,
+    *mut VABufferID,
+) -> VAStatus;
 type VaDestroyBufferFn = unsafe extern "C" fn(VADisplay, VABufferID) -> VAStatus;
 type VaBeginPictureFn = unsafe extern "C" fn(VADisplay, VAContextID, VASurfaceID) -> VAStatus;
-type VaRenderPictureFn = unsafe extern "C" fn(VADisplay, VAContextID, *mut VABufferID, c_int) -> VAStatus;
+type VaRenderPictureFn =
+    unsafe extern "C" fn(VADisplay, VAContextID, *mut VABufferID, c_int) -> VAStatus;
 type VaEndPictureFn = unsafe extern "C" fn(VADisplay, VAContextID) -> VAStatus;
 type VaSyncSurfaceFn = unsafe extern "C" fn(VADisplay, VASurfaceID) -> VAStatus;
 type VaDeriveImageFn = unsafe extern "C" fn(VADisplay, VASurfaceID, *mut VAImage) -> VAStatus;
@@ -202,7 +244,7 @@ type VaErrorStrFn = unsafe extern "C" fn(VAStatus) -> *const c_char;
 struct VaapiLibrary {
     _libva: libloading::Library,
     _libva_drm: libloading::Library,
-    
+
     va_get_display_drm: VaGetDisplayDrmFn,
     va_initialize: VaInitializeFn,
     va_terminate: VaTerminateFn,
@@ -235,95 +277,113 @@ unsafe impl Sync for VaapiLibrary {}
 static VAAPI_LIB: OnceLock<Option<VaapiLibrary>> = OnceLock::new();
 
 fn load_vaapi_library() -> Option<&'static VaapiLibrary> {
-    VAAPI_LIB.get_or_init(|| {
-        #[cfg(target_os = "linux")]
-        {
-            unsafe {
-                let libva_path = get_libva_path();
-                let libva_drm_path = get_libva_drm_path();
-                
-                let libva = match libloading::Library::new(libva_path) {
-                    Ok(lib) => lib,
-                    Err(e) => {
-                        tracing::warn!("Failed to load libva: {}", e);
-                        return None;
-                    }
-                };
-                
-                let libva_drm = match libloading::Library::new(libva_drm_path) {
-                    Ok(lib) => lib,
-                    Err(e) => {
-                        tracing::warn!("Failed to load libva-drm: {}", e);
-                        return None;
-                    }
-                };
-                
-                // Load functions from libva
-                let va_initialize: VaInitializeFn = *libva.get(b"vaInitialize\0").ok()?;
-                let va_terminate: VaTerminateFn = *libva.get(b"vaTerminate\0").ok()?;
-                let va_query_config_profiles: VaQueryConfigProfilesFn = *libva.get(b"vaQueryConfigProfiles\0").ok()?;
-                let va_query_config_entrypoints: VaQueryConfigEntrypointsFn = *libva.get(b"vaQueryConfigEntrypoints\0").ok()?;
-                let va_get_config_attributes: VaGetConfigAttributesFn = *libva.get(b"vaGetConfigAttributes\0").ok()?;
-                let va_create_config: VaCreateConfigFn = *libva.get(b"vaCreateConfig\0").ok()?;
-                let va_destroy_config: VaDestroyConfigFn = *libva.get(b"vaDestroyConfig\0").ok()?;
-                let va_create_surfaces: VaCreateSurfacesFn = *libva.get(b"vaCreateSurfaces\0").ok()?;
-                let va_destroy_surfaces: VaDestroySurfacesFn = *libva.get(b"vaDestroySurfaces\0").ok()?;
-                let va_create_context: VaCreateContextFn = *libva.get(b"vaCreateContext\0").ok()?;
-                let va_destroy_context: VaDestroyContextFn = *libva.get(b"vaDestroyContext\0").ok()?;
-                let va_create_buffer: VaCreateBufferFn = *libva.get(b"vaCreateBuffer\0").ok()?;
-                let va_destroy_buffer: VaDestroyBufferFn = *libva.get(b"vaDestroyBuffer\0").ok()?;
-                let va_begin_picture: VaBeginPictureFn = *libva.get(b"vaBeginPicture\0").ok()?;
-                let va_render_picture: VaRenderPictureFn = *libva.get(b"vaRenderPicture\0").ok()?;
-                let va_end_picture: VaEndPictureFn = *libva.get(b"vaEndPicture\0").ok()?;
-                let va_sync_surface: VaSyncSurfaceFn = *libva.get(b"vaSyncSurface\0").ok()?;
-                let va_derive_image: VaDeriveImageFn = *libva.get(b"vaDeriveImage\0").ok()?;
-                let va_destroy_image: VaDestroyImageFn = *libva.get(b"vaDestroyImage\0").ok()?;
-                let va_map_buffer: VaMapBufferFn = *libva.get(b"vaMapBuffer\0").ok()?;
-                let va_unmap_buffer: VaUnmapBufferFn = *libva.get(b"vaUnmapBuffer\0").ok()?;
-                let va_query_surface_status: VaQuerySurfaceStatusFn = *libva.get(b"vaQuerySurfaceStatus\0").ok()?;
-                let va_error_str: VaErrorStrFn = *libva.get(b"vaErrorStr\0").ok()?;
-                
-                // Load from libva-drm
-                let va_get_display_drm: VaGetDisplayDrmFn = *libva_drm.get(b"vaGetDisplayDRM\0").ok()?;
-                
-                tracing::info!("VAAPI library loaded successfully");
-                
-                Some(VaapiLibrary {
-                    _libva: libva,
-                    _libva_drm: libva_drm,
-                    va_get_display_drm,
-                    va_initialize,
-                    va_terminate,
-                    va_query_config_profiles,
-                    va_query_config_entrypoints,
-                    va_get_config_attributes,
-                    va_create_config,
-                    va_destroy_config,
-                    va_create_surfaces,
-                    va_destroy_surfaces,
-                    va_create_context,
-                    va_destroy_context,
-                    va_create_buffer,
-                    va_destroy_buffer,
-                    va_begin_picture,
-                    va_render_picture,
-                    va_end_picture,
-                    va_sync_surface,
-                    va_derive_image,
-                    va_destroy_image,
-                    va_map_buffer,
-                    va_unmap_buffer,
-                    va_query_surface_status,
-                    va_error_str,
-                })
+    VAAPI_LIB
+        .get_or_init(|| {
+            #[cfg(target_os = "linux")]
+            {
+                unsafe {
+                    let libva_path = get_libva_path();
+                    let libva_drm_path = get_libva_drm_path();
+
+                    let libva = match libloading::Library::new(libva_path) {
+                        Ok(lib) => lib,
+                        Err(e) => {
+                            tracing::warn!("Failed to load libva: {}", e);
+                            return None;
+                        }
+                    };
+
+                    let libva_drm = match libloading::Library::new(libva_drm_path) {
+                        Ok(lib) => lib,
+                        Err(e) => {
+                            tracing::warn!("Failed to load libva-drm: {}", e);
+                            return None;
+                        }
+                    };
+
+                    // Load functions from libva
+                    let va_initialize: VaInitializeFn = *libva.get(b"vaInitialize\0").ok()?;
+                    let va_terminate: VaTerminateFn = *libva.get(b"vaTerminate\0").ok()?;
+                    let va_query_config_profiles: VaQueryConfigProfilesFn =
+                        *libva.get(b"vaQueryConfigProfiles\0").ok()?;
+                    let va_query_config_entrypoints: VaQueryConfigEntrypointsFn =
+                        *libva.get(b"vaQueryConfigEntrypoints\0").ok()?;
+                    let va_get_config_attributes: VaGetConfigAttributesFn =
+                        *libva.get(b"vaGetConfigAttributes\0").ok()?;
+                    let va_create_config: VaCreateConfigFn =
+                        *libva.get(b"vaCreateConfig\0").ok()?;
+                    let va_destroy_config: VaDestroyConfigFn =
+                        *libva.get(b"vaDestroyConfig\0").ok()?;
+                    let va_create_surfaces: VaCreateSurfacesFn =
+                        *libva.get(b"vaCreateSurfaces\0").ok()?;
+                    let va_destroy_surfaces: VaDestroySurfacesFn =
+                        *libva.get(b"vaDestroySurfaces\0").ok()?;
+                    let va_create_context: VaCreateContextFn =
+                        *libva.get(b"vaCreateContext\0").ok()?;
+                    let va_destroy_context: VaDestroyContextFn =
+                        *libva.get(b"vaDestroyContext\0").ok()?;
+                    let va_create_buffer: VaCreateBufferFn =
+                        *libva.get(b"vaCreateBuffer\0").ok()?;
+                    let va_destroy_buffer: VaDestroyBufferFn =
+                        *libva.get(b"vaDestroyBuffer\0").ok()?;
+                    let va_begin_picture: VaBeginPictureFn =
+                        *libva.get(b"vaBeginPicture\0").ok()?;
+                    let va_render_picture: VaRenderPictureFn =
+                        *libva.get(b"vaRenderPicture\0").ok()?;
+                    let va_end_picture: VaEndPictureFn = *libva.get(b"vaEndPicture\0").ok()?;
+                    let va_sync_surface: VaSyncSurfaceFn = *libva.get(b"vaSyncSurface\0").ok()?;
+                    let va_derive_image: VaDeriveImageFn = *libva.get(b"vaDeriveImage\0").ok()?;
+                    let va_destroy_image: VaDestroyImageFn =
+                        *libva.get(b"vaDestroyImage\0").ok()?;
+                    let va_map_buffer: VaMapBufferFn = *libva.get(b"vaMapBuffer\0").ok()?;
+                    let va_unmap_buffer: VaUnmapBufferFn = *libva.get(b"vaUnmapBuffer\0").ok()?;
+                    let va_query_surface_status: VaQuerySurfaceStatusFn =
+                        *libva.get(b"vaQuerySurfaceStatus\0").ok()?;
+                    let va_error_str: VaErrorStrFn = *libva.get(b"vaErrorStr\0").ok()?;
+
+                    // Load from libva-drm
+                    let va_get_display_drm: VaGetDisplayDrmFn =
+                        *libva_drm.get(b"vaGetDisplayDRM\0").ok()?;
+
+                    tracing::info!("VAAPI library loaded successfully");
+
+                    Some(VaapiLibrary {
+                        _libva: libva,
+                        _libva_drm: libva_drm,
+                        va_get_display_drm,
+                        va_initialize,
+                        va_terminate,
+                        va_query_config_profiles,
+                        va_query_config_entrypoints,
+                        va_get_config_attributes,
+                        va_create_config,
+                        va_destroy_config,
+                        va_create_surfaces,
+                        va_destroy_surfaces,
+                        va_create_context,
+                        va_destroy_context,
+                        va_create_buffer,
+                        va_destroy_buffer,
+                        va_begin_picture,
+                        va_render_picture,
+                        va_end_picture,
+                        va_sync_surface,
+                        va_derive_image,
+                        va_destroy_image,
+                        va_map_buffer,
+                        va_unmap_buffer,
+                        va_query_surface_status,
+                        va_error_str,
+                    })
+                }
             }
-        }
-        
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
-        }
-    }).as_ref()
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                None
+            }
+        })
+        .as_ref()
 }
 
 // ============================================================================
@@ -357,7 +417,7 @@ impl VaapiCodec {
             Self::VC1 => VA_PROFILE_VC1_ADVANCED,
         }
     }
-    
+
     fn rt_format(&self) -> VARTFormat {
         match self {
             Self::H265_10bit | Self::VP9_10bit => VA_RT_FORMAT_YUV420_10,
@@ -429,7 +489,7 @@ pub fn vaapi_available() -> bool {
     {
         load_vaapi_library().is_some()
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         false
@@ -442,19 +502,24 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
     {
         let lib = match load_vaapi_library() {
             Some(l) => l,
-            None => return VaapiCapabilities {
-                available: false,
-                driver_name: String::new(),
-                vendor: String::new(),
-                supported_codecs: Vec::new(),
-                max_width: 0,
-                max_height: 0,
-            },
+            None => {
+                return VaapiCapabilities {
+                    available: false,
+                    driver_name: String::new(),
+                    vendor: String::new(),
+                    supported_codecs: Vec::new(),
+                    max_width: 0,
+                    max_height: 0,
+                }
+            }
         };
-        
+
         unsafe {
             // Try to open render node
-            let drm_fd = libc::open(b"/dev/dri/renderD128\0".as_ptr() as *const c_char, libc::O_RDWR);
+            let drm_fd = libc::open(
+                b"/dev/dri/renderD128\0".as_ptr() as *const c_char,
+                libc::O_RDWR,
+            );
             if drm_fd < 0 {
                 return VaapiCapabilities {
                     available: false,
@@ -465,7 +530,7 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
                     max_height: 0,
                 };
             }
-            
+
             let display = (lib.va_get_display_drm)(drm_fd);
             if display.is_null() {
                 libc::close(drm_fd);
@@ -478,7 +543,7 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
                     max_height: 0,
                 };
             }
-            
+
             let mut major = 0;
             let mut minor = 0;
             let status = (lib.va_initialize)(display, &mut major, &mut minor);
@@ -493,15 +558,16 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
                     max_height: 0,
                 };
             }
-            
+
             // Query supported profiles
             let mut profiles = vec![0 as VAProfile; 32];
             let mut num_profiles = 0;
             (lib.va_query_config_profiles)(display, profiles.as_mut_ptr(), &mut num_profiles);
             profiles.truncate(num_profiles as usize);
-            
+
             let mut codecs = Vec::new();
-            if profiles.contains(&VA_PROFILE_H264_HIGH) || profiles.contains(&VA_PROFILE_H264_MAIN) {
+            if profiles.contains(&VA_PROFILE_H264_HIGH) || profiles.contains(&VA_PROFILE_H264_MAIN)
+            {
                 codecs.push("H.264".to_string());
             }
             if profiles.contains(&VA_PROFILE_HEVC_MAIN) {
@@ -516,10 +582,10 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
             if profiles.contains(&VA_PROFILE_AV1_PROFILE0) {
                 codecs.push("AV1".to_string());
             }
-            
+
             (lib.va_terminate)(display);
             libc::close(drm_fd);
-            
+
             VaapiCapabilities {
                 available: true,
                 driver_name: format!("VA-API {}.{}", major, minor),
@@ -530,7 +596,7 @@ pub fn vaapi_capabilities() -> VaapiCapabilities {
             }
         }
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         VaapiCapabilities {
@@ -549,23 +615,25 @@ impl VaapiDecoder {
     pub fn new(codec: VaapiCodec, width: u32, height: u32) -> Result<Self, String> {
         #[cfg(target_os = "linux")]
         {
-            let lib = load_vaapi_library()
-                .ok_or_else(|| "VAAPI not available".to_string())?;
-            
+            let lib = load_vaapi_library().ok_or_else(|| "VAAPI not available".to_string())?;
+
             unsafe {
                 // Open DRM render node
-                let drm_fd = libc::open(b"/dev/dri/renderD128\0".as_ptr() as *const c_char, libc::O_RDWR);
+                let drm_fd = libc::open(
+                    b"/dev/dri/renderD128\0".as_ptr() as *const c_char,
+                    libc::O_RDWR,
+                );
                 if drm_fd < 0 {
                     return Err("Failed to open DRM device".to_string());
                 }
-                
+
                 // Get VA display
                 let display = (lib.va_get_display_drm)(drm_fd);
                 if display.is_null() {
                     libc::close(drm_fd);
                     return Err("Failed to get VA display".to_string());
                 }
-                
+
                 // Initialize
                 let mut major = 0;
                 let mut minor = 0;
@@ -574,26 +642,35 @@ impl VaapiDecoder {
                     libc::close(drm_fd);
                     return Err(format!("vaInitialize failed: {}", status));
                 }
-                
+
                 // Create config
                 let profile = codec.to_va_profile();
                 let mut config_id: VAConfigID = 0;
                 let status = (lib.va_create_config)(
-                    display, profile, VA_ENTRYPOINT_VLD,
-                    ptr::null_mut(), 0, &mut config_id
+                    display,
+                    profile,
+                    VA_ENTRYPOINT_VLD,
+                    ptr::null_mut(),
+                    0,
+                    &mut config_id,
                 );
                 if status != VA_STATUS_SUCCESS {
                     (lib.va_terminate)(display);
                     libc::close(drm_fd);
                     return Err(format!("vaCreateConfig failed: {}", status));
                 }
-                
+
                 // Create surfaces
                 let mut surfaces = vec![0 as VASurfaceID; NUM_SURFACES];
                 let status = (lib.va_create_surfaces)(
-                    display, codec.rt_format(), width, height,
-                    surfaces.as_mut_ptr(), NUM_SURFACES as c_uint,
-                    ptr::null_mut(), 0
+                    display,
+                    codec.rt_format(),
+                    width,
+                    height,
+                    surfaces.as_mut_ptr(),
+                    NUM_SURFACES as c_uint,
+                    ptr::null_mut(),
+                    0,
                 );
                 if status != VA_STATUS_SUCCESS {
                     (lib.va_destroy_config)(display, config_id);
@@ -601,28 +678,38 @@ impl VaapiDecoder {
                     libc::close(drm_fd);
                     return Err(format!("vaCreateSurfaces failed: {}", status));
                 }
-                
+
                 // Create context
                 let mut context_id: VAContextID = 0;
                 let status = (lib.va_create_context)(
-                    display, config_id, width as c_int, height as c_int, 0,
-                    surfaces.as_mut_ptr(), NUM_SURFACES as c_int, &mut context_id
+                    display,
+                    config_id,
+                    width as c_int,
+                    height as c_int,
+                    0,
+                    surfaces.as_mut_ptr(),
+                    NUM_SURFACES as c_int,
+                    &mut context_id,
                 );
                 if status != VA_STATUS_SUCCESS {
-                    (lib.va_destroy_surfaces)(display, surfaces.as_mut_ptr(), NUM_SURFACES as c_int);
+                    (lib.va_destroy_surfaces)(
+                        display,
+                        surfaces.as_mut_ptr(),
+                        NUM_SURFACES as c_int,
+                    );
                     (lib.va_destroy_config)(display, config_id);
                     (lib.va_terminate)(display);
                     libc::close(drm_fd);
                     return Err(format!("vaCreateContext failed: {}", status));
                 }
-                
+
                 let bit_depth = match codec {
                     VaapiCodec::H265_10bit | VaapiCodec::VP9_10bit => 10,
                     _ => 8,
                 };
-                
+
                 tracing::info!("VAAPI decoder created for {:?} {}x{}", codec, width, height);
-                
+
                 Ok(Self {
                     lib,
                     display,
@@ -639,48 +726,48 @@ impl VaapiDecoder {
                 })
             }
         }
-        
+
         #[cfg(not(target_os = "linux"))]
         {
             Err("VAAPI is only available on Linux".to_string())
         }
     }
-    
+
     /// Decode a packet (this is a simplified interface - real implementation needs codec-specific parsing)
     #[cfg(target_os = "linux")]
     pub fn decode(&mut self, data: &[u8], pts: i64) -> Result<Option<DecodedFrame>, String> {
         // Get next surface
         let surface = self.surfaces[self.current_surface];
         self.current_surface = (self.current_surface + 1) % NUM_SURFACES;
-        
+
         unsafe {
             // This is a simplified version - real implementation needs:
             // 1. Parse NAL units
             // 2. Build codec-specific picture parameter buffers
             // 3. Build slice parameter buffers
             // 4. Submit slice data
-            
+
             // For now, we just demonstrate the surface mapping
             // The actual decode would require full codec-specific parameter building
-            
+
             // Queue surface for later retrieval
             self.pending_frames.push_back((surface, pts));
-            
+
             // Try to get a completed frame
             self.get_completed_frame()
         }
     }
-    
+
     #[cfg(target_os = "linux")]
     fn get_completed_frame(&mut self) -> Result<Option<DecodedFrame>, String> {
         if self.pending_frames.is_empty() {
             return Ok(None);
         }
-        
+
         let (surface, pts) = self.pending_frames.front().unwrap();
         let surface = *surface;
         let pts = *pts;
-        
+
         unsafe {
             // Check if surface is ready
             let mut status = 0u32;
@@ -688,26 +775,26 @@ impl VaapiDecoder {
             if result != VA_STATUS_SUCCESS {
                 return Ok(None);
             }
-            
+
             if status != VA_SURFACE_READY {
                 return Ok(None);
             }
-            
+
             self.pending_frames.pop_front();
-            
+
             // Sync surface
             let result = (self.lib.va_sync_surface)(self.display, surface);
             if result != VA_STATUS_SUCCESS {
                 return Err(format!("vaSyncSurface failed: {}", result));
             }
-            
+
             // Derive image from surface
             let mut image = VAImage::default();
             let result = (self.lib.va_derive_image)(self.display, surface, &mut image);
             if result != VA_STATUS_SUCCESS {
                 return Err(format!("vaDeriveImage failed: {}", result));
             }
-            
+
             // Map buffer
             let mut data_ptr: *mut c_void = ptr::null_mut();
             let result = (self.lib.va_map_buffer)(self.display, image.buf, &mut data_ptr);
@@ -715,25 +802,25 @@ impl VaapiDecoder {
                 (self.lib.va_destroy_image)(self.display, image.image_id);
                 return Err(format!("vaMapBuffer failed: {}", result));
             }
-            
+
             // Calculate sizes and copy data
             let y_size = (image.pitches[0] * image.height as u32) as usize;
             let uv_size = (image.pitches[1] * (image.height as u32 / 2)) as usize;
             let total_size = y_size + uv_size;
-            
+
             let mut frame_data = vec![0u8; total_size];
             ptr::copy_nonoverlapping(data_ptr as *const u8, frame_data.as_mut_ptr(), total_size);
-            
+
             // Unmap and destroy image
             (self.lib.va_unmap_buffer)(self.display, image.buf);
             (self.lib.va_destroy_image)(self.display, image.image_id);
-            
+
             let format = if self.bit_depth > 8 {
                 SurfaceFormat::P010
             } else {
                 SurfaceFormat::NV12
             };
-            
+
             Ok(Some(DecodedFrame {
                 pts,
                 width: image.width as u32,
@@ -745,26 +832,26 @@ impl VaapiDecoder {
             }))
         }
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     pub fn decode(&mut self, _data: &[u8], _pts: i64) -> Result<Option<DecodedFrame>, String> {
         Err("VAAPI is only available on Linux".to_string())
     }
-    
+
     /// Flush decoder
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
         let frames = Vec::new();
-        
+
         #[cfg(target_os = "linux")]
         {
             while let Ok(Some(frame)) = self.get_completed_frame() {
                 frames.push(frame);
             }
         }
-        
+
         frames
     }
-    
+
     /// Get decoder info
     pub fn info(&self) -> serde_json::Value {
         serde_json::json!({
@@ -783,7 +870,11 @@ impl Drop for VaapiDecoder {
         #[cfg(target_os = "linux")]
         unsafe {
             (self.lib.va_destroy_context)(self.display, self.context_id);
-            (self.lib.va_destroy_surfaces)(self.display, self.surfaces.as_mut_ptr(), NUM_SURFACES as c_int);
+            (self.lib.va_destroy_surfaces)(
+                self.display,
+                self.surfaces.as_mut_ptr(),
+                NUM_SURFACES as c_int,
+            );
             (self.lib.va_destroy_config)(self.display, self.config_id);
             (self.lib.va_terminate)(self.display);
             libc::close(self.drm_fd);
@@ -795,31 +886,26 @@ impl Drop for VaapiDecoder {
 // Public Rust API
 // ============================================================================
 
-
-
-
 pub fn vaapi_check_available() -> bool {
     vaapi_available()
 }
 
-
 pub fn vaapi_get_capabilities() -> serde_json::Value {
     serde_json::to_value(vaapi_capabilities()).unwrap_or_default()
 }
-
 
 pub fn vaapi_detect_driver() -> serde_json::Value {
     // Detect which VA-API driver is in use
     #[cfg(target_os = "linux")]
     {
         use std::process::Command;
-        
+
         // Try to detect driver via vainfo
         let vainfo = Command::new("vainfo")
             .output()
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok());
-        
+
         let driver = if let Some(info) = &vainfo {
             if info.contains("iHD") || info.contains("Intel") {
                 "intel-media-driver (iHD)"
@@ -837,7 +923,7 @@ pub fn vaapi_detect_driver() -> serde_json::Value {
         } else {
             "detection failed"
         };
-        
+
         // Check render nodes
         let render_nodes: Vec<String> = (128..136)
             .filter_map(|i| {
@@ -849,7 +935,7 @@ pub fn vaapi_detect_driver() -> serde_json::Value {
                 }
             })
             .collect();
-        
+
         serde_json::json!({
             "available": vaapi_available(),
             "driver": driver,
@@ -857,7 +943,7 @@ pub fn vaapi_detect_driver() -> serde_json::Value {
             "vainfo_output": vainfo.unwrap_or_default().lines().take(10).collect::<Vec<_>>(),
         })
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         serde_json::json!({
@@ -868,7 +954,6 @@ pub fn vaapi_detect_driver() -> serde_json::Value {
         })
     }
 }
-
 
 pub fn vaapi_description() -> String {
     r#"
@@ -896,5 +981,6 @@ PIPELINE:
 5. Create decoder context
 6. Submit picture buffers
 7. Map decoded surfaces
-"#.to_string()
+"#
+    .to_string()
 }
