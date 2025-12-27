@@ -1,5 +1,5 @@
 //! # SLAIN Core
-//! 
+//!
 //! Pure Rust GPU-accelerated video player and hardware toolkit.
 
 #![allow(dead_code)]
@@ -9,89 +9,91 @@
 // ============================================================================
 // Core GPU / Hardware
 // ============================================================================
-pub mod gpu;
-pub mod loader;
-pub mod gpu_orchestrator;
 pub mod driver_analysis;
+pub mod gpu;
+pub mod gpu_orchestrator;
 pub mod hardware_bridge;
+pub mod loader;
 pub mod mux_prober;
 pub mod vbios;
 
 // ============================================================================
 // Hardware Video Decoders
 // ============================================================================
-pub mod nvdec;
 pub mod amf_decode;
 pub mod amf_encoder;
-pub mod vaapi_decode;
-pub mod hw_decode;
 pub mod decode;
 pub mod h264_utils;
+pub mod hw_decode;
+pub mod nvdec;
+pub mod vaapi_decode;
 
 // ============================================================================
 // Container Demuxers
 // ============================================================================
-pub mod mkv;
 pub mod avi_demux;
-pub mod ts_demux;
+pub mod lav;
+pub mod mkv;
 pub mod mp4_demux;
-pub mod lav;  // LAV Filters replacement (splitter + decoders)
+pub mod ts_demux; // LAV Filters replacement (splitter + decoders)
 
 // ============================================================================
 // DirectShow Integration (Windows)
 // ============================================================================
 #[cfg(windows)]
-pub mod dshow;  // LAV Filters via DirectShow COM
+pub mod dshow; // LAV Filters via DirectShow COM
 
 // ============================================================================
 // Media Processing
 // ============================================================================
 pub mod audio;
-pub mod pixel_convert;
-pub mod gpu_video_processor;
+pub mod camera;
+pub mod filter_pipeline;
 pub mod frame_queue;
 pub mod video_filters;
 pub mod filter_pipeline;
 pub mod subtitles;
 pub mod imaging;
-pub mod camera;
+pub mod pixel_convert;
+pub mod subtitles;
+pub mod video_filters;
 
 // ============================================================================
 // Streaming / Network
 // ============================================================================
-pub mod streaming;
-pub mod iptv;
 pub mod debrid;
+pub mod iptv;
 pub mod protocol;
+pub mod streaming;
 
 // ============================================================================
 // Pipelines (AVS/VS/Vulkan/CUDA)
 // ============================================================================
-pub mod pipeline;
 pub mod bandwidth;
+pub mod pipeline;
 
 // ============================================================================
 // Features
 // ============================================================================
-pub mod disc;
 pub mod archive;
+pub mod disc;
 pub mod history;
 pub mod media_library;
+pub mod retro_tv;
 pub mod tray;
 pub mod voice;
-pub mod retro_tv;
 
 // ============================================================================
 // Experimental / Research
 // ============================================================================
 pub mod aegis;
+pub mod block_mirror;
+pub mod cosmic_movie;
 pub mod forumyze;
+pub mod fractal;
 pub mod legal_evidence;
 pub mod message_board;
-pub mod cosmic_movie;
 pub mod starlight;
-pub mod block_mirror;
-pub mod fractal;
 
 // ============================================================================
 // Stubs (to be implemented)

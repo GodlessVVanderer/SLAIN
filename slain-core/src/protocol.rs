@@ -23,19 +23,19 @@ pub enum ProtocolAction {
 /// Parse command line arguments for protocol URL
 pub fn parse_protocol_args() -> ProtocolAction {
     let args: Vec<String> = env::args().collect();
-    
+
     // Check if launched with a slain:// URL
     for arg in args.iter().skip(1) {
         if arg.starts_with("slain://") {
             return parse_slain_url(arg);
         }
-        
+
         // Also handle direct file paths
         if is_video_file(arg) {
             return ProtocolAction::OpenFile(arg.clone());
         }
     }
-    
+
     ProtocolAction::None
 }
 
@@ -43,17 +43,17 @@ pub fn parse_protocol_args() -> ProtocolAction {
 fn parse_slain_url(url_str: &str) -> ProtocolAction {
     // Handle simple commands
     let path = url_str.strip_prefix("slain://").unwrap_or("");
-    
+
     match path.split('?').next().unwrap_or("") {
         "test" | "ping" => return ProtocolAction::Test,
         "" => return ProtocolAction::None,
         _ => {}
     }
-    
+
     // Parse as URL to extract query parameters
     if let Ok(url) = Url::parse(url_str) {
         let command = url.host_str().unwrap_or("");
-        
+
         match command {
             "play" => {
                 // Get the video URL from query params
@@ -80,17 +80,17 @@ fn parse_slain_url(url_str: &str) -> ProtocolAction {
             }
         }
     }
-    
+
     ProtocolAction::None
 }
 
 /// Check if a path is a video file
 fn is_video_file(path: &str) -> bool {
     let extensions = [
-        ".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv", ".flv",
-        ".m4v", ".ts", ".mts", ".m2ts", ".vob", ".ogv", ".3gp",
+        ".mp4", ".mkv", ".avi", ".webm", ".mov", ".wmv", ".flv", ".m4v", ".ts", ".mts", ".m2ts",
+        ".vob", ".ogv", ".3gp",
     ];
-    
+
     let lower = path.to_lowercase();
     extensions.iter().any(|ext| lower.ends_with(ext))
 }
@@ -99,7 +99,7 @@ fn is_video_file(path: &str) -> bool {
 // Public Rust API
 // ============================================================================
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LaunchInfo {
@@ -107,7 +107,6 @@ pub struct LaunchInfo {
     pub url: Option<String>,
     pub file: Option<String>,
 }
-
 
 pub fn get_launch_action() -> LaunchInfo {
     match parse_protocol_args() {
@@ -137,7 +136,7 @@ pub fn get_launch_action() -> LaunchInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_play_url() {
         let url = "slain://play?url=https://cdn.discordapp.com/attachments/123/456/video.mp4";
@@ -148,9 +147,12 @@ mod tests {
             _ => panic!("Expected PlayUrl"),
         }
     }
-    
+
     #[test]
     fn test_parse_test() {
-        assert!(matches!(parse_slain_url("slain://test"), ProtocolAction::Test));
+        assert!(matches!(
+            parse_slain_url("slain://test"),
+            ProtocolAction::Test
+        ));
     }
 }

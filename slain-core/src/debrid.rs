@@ -1,22 +1,21 @@
 // DEBRID - Premium Link Resolver Integration
-// 
+//
 // Supports: Real-Debrid, AllDebrid, Premiumize, Put.io
-// 
+//
 // LEGAL: These are legitimate premium download services.
 // Users provide their own API keys and subscriptions.
 // What content users access is their responsibility.
-// 
+//
 // How it works:
 // 1. User has subscription to debrid service
 // 2. User provides their API key in settings
 // 3. SLAIN uses API to resolve links to fast premium servers
 // 4. Better speeds, less buffering, more sources
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
-
 
 // ============================================================================
 // Configuration
@@ -29,12 +28,12 @@ pub struct DebridConfig {
     pub all_debrid_key: Option<String>,
     pub premiumize_key: Option<String>,
     pub putio_key: Option<String>,
-    
+
     // Preferences
     pub preferred_service: DebridService,
-    pub auto_resolve: bool,           // Auto-resolve links when detected
-    pub prefer_cached: bool,          // Prefer already-cached content
-    pub max_filesize_gb: u32,         // Skip files larger than this
+    pub auto_resolve: bool,   // Auto-resolve links when detected
+    pub prefer_cached: bool,  // Prefer already-cached content
+    pub max_filesize_gb: u32, // Skip files larger than this
     pub preferred_quality: Quality,
 }
 
@@ -44,16 +43,16 @@ pub enum DebridService {
     AllDebrid,
     Premiumize,
     PutIO,
-    Auto,  // Use whichever has the link cached
+    Auto, // Use whichever has the link cached
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Quality {
-    Highest,    // 4K if available
-    High,       // 1080p
-    Medium,     // 720p
-    Low,        // 480p
-    Lowest,     // Whatever works
+    Highest, // 4K if available
+    High,    // 1080p
+    Medium,  // 720p
+    Low,     // 480p
+    Lowest,  // Whatever works
 }
 
 impl Default for DebridConfig {
@@ -79,7 +78,7 @@ impl Default for DebridConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnresolvedLink {
     pub url: String,
-    pub host: String,           // mega, rapidgator, etc
+    pub host: String, // mega, rapidgator, etc
     pub filename: Option<String>,
     pub filesize: Option<u64>,
 }
@@ -87,8 +86,8 @@ pub struct UnresolvedLink {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedLink {
     pub original_url: String,
-    pub download_url: String,   // Direct download link
-    pub stream_url: Option<String>,  // If streamable
+    pub download_url: String,       // Direct download link
+    pub stream_url: Option<String>, // If streamable
     pub filename: String,
     pub filesize: u64,
     pub host: String,
@@ -96,7 +95,7 @@ pub struct ResolvedLink {
     pub is_cached: bool,
     pub quality: Option<String>,
     pub mime_type: Option<String>,
-    
+
     // Streaming info
     pub streamable: bool,
     pub transcode_available: bool,
@@ -139,26 +138,28 @@ impl RealDebridClient {
             base_url: "https://api.real-debrid.com/rest/1.0".to_string(),
         }
     }
-    
+
     /// Check if user has valid premium account
     pub async fn get_user(&self) -> Result<AccountInfo, String> {
         let client = reqwest::Client::new();
         let url = format!("{}/user", self.base_url);
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
+
         if !response.status().is_success() {
             return Err(format!("API error: {}", response.status()));
         }
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         Ok(AccountInfo {
             service: DebridService::RealDebrid,
             username: data["username"].as_str().unwrap_or("").to_string(),
@@ -170,32 +171,34 @@ impl RealDebridClient {
             quota_total: None,
         })
     }
-    
+
     /// Unrestrict a link (resolve to direct download)
     pub async fn unrestrict(&self, url: &str) -> Result<ResolvedLink, String> {
         let client = reqwest::Client::new();
         let api_url = format!("{}/unrestrict/link", self.base_url);
-        
+
         let mut params = HashMap::new();
         params.insert("link", url);
-        
-        let response = client.post(&api_url)
+
+        let response = client
+            .post(&api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .form(&params)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(format!("API error {}: {}", status, body));
         }
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         Ok(ResolvedLink {
             original_url: url.to_string(),
             download_url: data["download"].as_str().unwrap_or("").to_string(),
@@ -212,26 +215,28 @@ impl RealDebridClient {
             available_qualities: Vec::new(),
         })
     }
-    
+
     /// Check if content is cached (instant availability)
     pub async fn check_cache(&self, url: &str) -> Result<CacheStatus, String> {
         let client = reqwest::Client::new();
         let api_url = format!("{}/unrestrict/check", self.base_url);
-        
+
         let mut params = HashMap::new();
         params.insert("link", url);
-        
-        let response = client.post(&api_url)
+
+        let response = client
+            .post(&api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .form(&params)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         Ok(CacheStatus {
             url: url.to_string(),
             is_cached: data["supported"].as_i64() == Some(1),
@@ -239,38 +244,42 @@ impl RealDebridClient {
             instant_available: data["supported"].as_i64() == Some(1),
         })
     }
-    
+
     /// Get streaming info for a file
     pub async fn get_streaming_info(&self, file_id: &str) -> Result<serde_json::Value, String> {
         let client = reqwest::Client::new();
         let url = format!("{}/streaming/transcode/{}", self.base_url, file_id);
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        response.json()
+
+        response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))
     }
-    
+
     /// Get list of supported hosts
     pub async fn get_hosts(&self) -> Result<Vec<String>, String> {
         let client = reqwest::Client::new();
         let url = format!("{}/hosts", self.base_url);
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         // Extract host domains
         let mut hosts = Vec::new();
         if let Some(obj) = data.as_object() {
@@ -278,7 +287,7 @@ impl RealDebridClient {
                 hosts.push(key.clone());
             }
         }
-        
+
         Ok(hosts)
     }
 }
@@ -295,22 +304,24 @@ impl AllDebridClient {
             base_url: "https://api.alldebrid.com/v4".to_string(),
         }
     }
-    
+
     pub async fn get_user(&self) -> Result<AccountInfo, String> {
         let client = reqwest::Client::new();
         let url = format!("{}/user?agent=SLAIN&apikey={}", self.base_url, self.api_key);
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         let user = &data["data"]["user"];
-        
+
         Ok(AccountInfo {
             service: DebridService::AllDebrid,
             username: user["username"].as_str().unwrap_or("").to_string(),
@@ -322,29 +333,33 @@ impl AllDebridClient {
             quota_total: None,
         })
     }
-    
+
     pub async fn unrestrict(&self, url: &str) -> Result<ResolvedLink, String> {
         let client = reqwest::Client::new();
         let api_url = format!(
             "{}/link/unlock?agent=SLAIN&apikey={}&link={}",
-            self.base_url, self.api_key, urlencoding::encode(url)
+            self.base_url,
+            self.api_key,
+            urlencoding::encode(url)
         );
-        
-        let response = client.get(&api_url)
+
+        let response = client
+            .get(&api_url)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         if data["status"].as_str() != Some("success") {
             return Err(format!("API error: {:?}", data["error"]));
         }
-        
+
         let link_data = &data["data"];
-        
+
         Ok(ResolvedLink {
             original_url: url.to_string(),
             download_url: link_data["link"].as_str().unwrap_or("").to_string(),
@@ -375,61 +390,70 @@ impl PremiumizeClient {
             base_url: "https://www.premiumize.me/api".to_string(),
         }
     }
-    
+
     pub async fn get_user(&self) -> Result<AccountInfo, String> {
         let client = reqwest::Client::new();
         let url = format!("{}/account/info?apikey={}", self.base_url, self.api_key);
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         Ok(AccountInfo {
             service: DebridService::Premiumize,
             username: data["customer_id"].as_str().unwrap_or("").to_string(),
             email: None,
             premium: data["status"].as_str() == Some("active"),
-            premium_until: data["premium_until"].as_i64()
-                .map(|ts| chrono::DateTime::from_timestamp(ts, 0)
+            premium_until: data["premium_until"].as_i64().map(|ts| {
+                chrono::DateTime::from_timestamp(ts, 0)
                     .map(|dt| dt.to_rfc3339())
-                    .unwrap_or_default()),
+                    .unwrap_or_default()
+            }),
             points: None,
             quota_used: data["space_used"].as_f64().map(|f| f as u64),
             quota_total: Some(1024 * 1024 * 1024 * 1024), // 1TB
         })
     }
-    
+
     pub async fn unrestrict(&self, url: &str) -> Result<ResolvedLink, String> {
         let client = reqwest::Client::new();
-        let api_url = format!("{}/transfer/directdl?apikey={}", self.base_url, self.api_key);
-        
+        let api_url = format!(
+            "{}/transfer/directdl?apikey={}",
+            self.base_url, self.api_key
+        );
+
         let mut params = HashMap::new();
         params.insert("src", url);
-        
-        let response = client.post(&api_url)
+
+        let response = client
+            .post(&api_url)
             .form(&params)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         if data["status"].as_str() != Some("success") {
             return Err(format!("API error: {:?}", data["message"]));
         }
-        
+
         // Premiumize returns content array
-        let content = data["content"].as_array()
+        let content = data["content"]
+            .as_array()
             .and_then(|arr| arr.first())
             .ok_or("No content returned")?;
-        
+
         Ok(ResolvedLink {
             original_url: url.to_string(),
             download_url: content["link"].as_str().unwrap_or("").to_string(),
@@ -446,7 +470,7 @@ impl PremiumizeClient {
             available_qualities: Vec::new(),
         })
     }
-    
+
     pub async fn check_cache(&self, hashes: &[&str]) -> Result<Vec<CacheStatus>, String> {
         let client = reqwest::Client::new();
         let items = hashes.join(",");
@@ -454,16 +478,18 @@ impl PremiumizeClient {
             "{}/cache/check?apikey={}&items[]={}",
             self.base_url, self.api_key, items
         );
-        
-        let response = client.get(&url)
+
+        let response = client
+            .get(&url)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
-        
-        let data: serde_json::Value = response.json()
+
+        let data: serde_json::Value = response
+            .json()
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
-        
+
         let mut results = Vec::new();
         if let Some(response_arr) = data["response"].as_array() {
             for (i, is_cached) in response_arr.iter().enumerate() {
@@ -477,7 +503,7 @@ impl PremiumizeClient {
                 }
             }
         }
-        
+
         Ok(results)
     }
 }
@@ -494,7 +520,7 @@ impl DebridManager {
     pub fn new(config: DebridConfig) -> Self {
         Self { config }
     }
-    
+
     /// Get available (configured) services
     pub fn available_services(&self) -> Vec<DebridService> {
         let mut services = Vec::new();
@@ -512,7 +538,7 @@ impl DebridManager {
         }
         services
     }
-    
+
     /// Resolve a link using the best available service
     pub async fn resolve(&self, url: &str) -> Result<ResolvedLink, String> {
         let service = match self.config.preferred_service {
@@ -530,31 +556,40 @@ impl DebridManager {
             }
             other => other,
         };
-        
+
         match service {
             DebridService::RealDebrid => {
-                let key = self.config.real_debrid_key.as_ref()
+                let key = self
+                    .config
+                    .real_debrid_key
+                    .as_ref()
                     .ok_or("Real-Debrid not configured")?;
                 RealDebridClient::new(key.clone()).unrestrict(url).await
             }
             DebridService::AllDebrid => {
-                let key = self.config.all_debrid_key.as_ref()
+                let key = self
+                    .config
+                    .all_debrid_key
+                    .as_ref()
                     .ok_or("AllDebrid not configured")?;
                 AllDebridClient::new(key.clone()).unrestrict(url).await
             }
             DebridService::Premiumize => {
-                let key = self.config.premiumize_key.as_ref()
+                let key = self
+                    .config
+                    .premiumize_key
+                    .as_ref()
                     .ok_or("Premiumize not configured")?;
                 PremiumizeClient::new(key.clone()).unrestrict(url).await
             }
             _ => Err("Service not implemented".to_string()),
         }
     }
-    
+
     /// Check account status for all configured services
     pub async fn check_accounts(&self) -> Vec<Result<AccountInfo, String>> {
         let mut results = Vec::new();
-        
+
         if let Some(ref key) = self.config.real_debrid_key {
             results.push(RealDebridClient::new(key.clone()).get_user().await);
         }
@@ -564,7 +599,7 @@ impl DebridManager {
         if let Some(ref key) = self.config.premiumize_key {
             results.push(PremiumizeClient::new(key.clone()).get_user().await);
         }
-        
+
         results
     }
 }
@@ -573,24 +608,20 @@ impl DebridManager {
 // Global State
 // ============================================================================
 
-static DEBRID_CONFIG: Lazy<RwLock<DebridConfig>> = Lazy::new(|| {
-    RwLock::new(DebridConfig::default())
-});
+static DEBRID_CONFIG: Lazy<RwLock<DebridConfig>> =
+    Lazy::new(|| RwLock::new(DebridConfig::default()));
 
 // ============================================================================
 // Public Rust API
 // ============================================================================
 
-
 pub fn debrid_get_config() -> DebridConfig {
     DEBRID_CONFIG.read().unwrap().clone()
 }
 
-
 pub fn debrid_set_config(config: DebridConfig) {
     *DEBRID_CONFIG.write().unwrap() = config;
 }
-
 
 pub fn debrid_set_key(service: DebridService, key: String) {
     let mut config = DEBRID_CONFIG.write().unwrap();
@@ -603,16 +634,15 @@ pub fn debrid_set_key(service: DebridService, key: String) {
     }
 }
 
-
 pub fn debrid_available_services() -> Vec<String> {
     let config = DEBRID_CONFIG.read().unwrap();
     let manager = DebridManager::new(config.clone());
-    manager.available_services()
+    manager
+        .available_services()
         .into_iter()
         .map(|s| format!("{:?}", s))
         .collect()
 }
-
 
 pub async fn debrid_resolve(url: String) -> Result<ResolvedLink, String> {
     let config = DEBRID_CONFIG.read().unwrap().clone();
@@ -620,12 +650,13 @@ pub async fn debrid_resolve(url: String) -> Result<ResolvedLink, String> {
     manager.resolve(&url).await
 }
 
-
 pub async fn debrid_check_accounts() -> Vec<serde_json::Value> {
     let config = DEBRID_CONFIG.read().unwrap().clone();
     let manager = DebridManager::new(config);
-    
-    manager.check_accounts().await
+
+    manager
+        .check_accounts()
+        .await
         .into_iter()
         .map(|r| match r {
             Ok(info) => serde_json::to_value(info).unwrap_or_default(),
@@ -634,13 +665,14 @@ pub async fn debrid_check_accounts() -> Vec<serde_json::Value> {
         .collect()
 }
 
-
 pub async fn debrid_get_hosts(service: DebridService) -> Result<Vec<String>, String> {
     let config = DEBRID_CONFIG.read().unwrap();
-    
+
     match service {
         DebridService::RealDebrid => {
-            let key = config.real_debrid_key.as_ref()
+            let key = config
+                .real_debrid_key
+                .as_ref()
                 .ok_or("Real-Debrid not configured")?;
             RealDebridClient::new(key.clone()).get_hosts().await
         }

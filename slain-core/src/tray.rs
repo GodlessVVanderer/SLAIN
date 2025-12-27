@@ -36,16 +36,24 @@ impl AppHandle {
 pub struct TrayHandle;
 
 impl TrayHandle {
-    pub fn set_menu(&self, _menu: SystemTrayMenu) -> Result<(), ()> { Ok(()) }
+    pub fn set_menu(&self, _menu: SystemTrayMenu) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
 /// Stub for webview window
 pub struct WebviewWindow;
 
 impl WebviewWindow {
-    pub fn show(&self) -> Result<(), ()> { Ok(()) }
-    pub fn set_focus(&self) -> Result<(), ()> { Ok(()) }
-    pub fn emit(&self, _event: &str, _payload: &str) -> Result<(), ()> { Ok(()) }
+    pub fn show(&self) -> Result<(), ()> {
+        Ok(())
+    }
+    pub fn set_focus(&self) -> Result<(), ()> {
+        Ok(())
+    }
+    pub fn emit(&self, _event: &str, _payload: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
 /// Stub for system tray menu
@@ -57,16 +65,16 @@ impl SystemTrayMenu {
     pub fn new() -> Self {
         Self { items: Vec::new() }
     }
-    
+
     pub fn add_item(mut self, item: CustomMenuItem) -> Self {
         self.items.push(item.id);
         self
     }
-    
+
     pub fn add_native_item(self, _item: SystemTrayMenuItem) -> Self {
         self
     }
-    
+
     pub fn add_submenu(mut self, submenu: SystemTraySubmenu) -> Self {
         self.items.push(submenu.title);
         self
@@ -82,7 +90,10 @@ pub struct CustomMenuItem {
 
 impl CustomMenuItem {
     pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
-        Self { id: id.into(), title: title.into() }
+        Self {
+            id: id.into(),
+            title: title.into(),
+        }
     }
 }
 
@@ -100,14 +111,22 @@ pub struct SystemTraySubmenu {
 
 impl SystemTraySubmenu {
     pub fn new(title: impl Into<String>, menu: SystemTrayMenu) -> Self {
-        Self { title: title.into(), menu }
+        Self {
+            title: title.into(),
+            menu,
+        }
     }
 }
 
 /// Stub for tray events
 pub enum SystemTrayEvent {
-    LeftClick { position: (f64, f64), size: (f64, f64) },
-    MenuItemClick { id: String },
+    LeftClick {
+        position: (f64, f64),
+        size: (f64, f64),
+    },
+    MenuItemClick {
+        id: String,
+    },
 }
 
 // ============================================================================
@@ -118,7 +137,7 @@ pub enum SystemTrayEvent {
 pub struct SecurityCamera {
     pub id: String,
     pub name: String,
-    pub url: String,           // RTSP, HTTP, or file path
+    pub url: String, // RTSP, HTTP, or file path
     pub camera_type: CameraType,
     pub enabled: bool,
     pub pip_position: PipPosition,
@@ -127,12 +146,12 @@ pub struct SecurityCamera {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum CameraType {
-    Rtsp,           // rtsp://user:pass@192.168.1.x:554/stream
-    Http,           // http://192.168.1.x/video.mjpg
-    HttpMjpeg,      // Motion JPEG stream
-    Onvif,          // ONVIF compatible
-    File,           // Local file or device
-    Usb,            // USB webcam
+    Rtsp,      // rtsp://user:pass@192.168.1.x:554/stream
+    Http,      // http://192.168.1.x/video.mjpg
+    HttpMjpeg, // Motion JPEG stream
+    Onvif,     // ONVIF compatible
+    File,      // Local file or device
+    Usb,       // USB webcam
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -146,9 +165,9 @@ pub enum PipPosition {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PipSize {
-    Small,      // 160x120
-    Medium,     // 320x240
-    Large,      // 480x360
+    Small,  // 160x120
+    Medium, // 320x240
+    Large,  // 480x360
     Custom { width: u32, height: u32 },
 }
 
@@ -174,7 +193,7 @@ pub struct AppSettings {
     pub show_tray_icon: bool,
     pub minimize_to_tray: bool,
     pub cameras: Vec<SecurityCamera>,
-    pub pip_opacity: f32,       // 0.0 - 1.0
+    pub pip_opacity: f32, // 0.0 - 1.0
     pub pip_always_on_top: bool,
     pub pip_click_through: bool,
 }
@@ -202,29 +221,30 @@ impl Default for AppSettings {
 pub fn set_autostart(enable: bool) -> Result<(), String> {
     use winreg::enums::*;
     use winreg::RegKey;
-    
+
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    
-    let key = hkcu.open_subkey_with_flags(path, KEY_SET_VALUE)
+
+    let key = hkcu
+        .open_subkey_with_flags(path, KEY_SET_VALUE)
         .map_err(|e| format!("Failed to open registry: {}", e))?;
-    
+
     let app_name = "SLAIN Video Player";
-    
+
     if enable {
-        let exe_path = std::env::current_exe()
-            .map_err(|e| format!("Failed to get exe path: {}", e))?;
-        
+        let exe_path =
+            std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
+
         // Add --minimized flag for startup
         let startup_cmd = format!("\"{}\" --minimized", exe_path.display());
-        
+
         key.set_value(app_name, &startup_cmd)
             .map_err(|e| format!("Failed to set registry value: {}", e))?;
     } else {
         // Ignore error if key doesn't exist
         let _ = key.delete_value(app_name);
     }
-    
+
     Ok(())
 }
 
@@ -240,17 +260,17 @@ pub fn is_autostart_enabled() -> bool {
     {
         use winreg::enums::*;
         use winreg::RegKey;
-        
+
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-        
+
         if let Ok(key) = hkcu.open_subkey(path) {
             let result: Result<String, _> = key.get_value("SLAIN Video Player");
             return result.is_ok();
         }
         false
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     false
 }
@@ -261,33 +281,32 @@ pub fn is_autostart_enabled() -> bool {
 
 pub fn create_tray_menu(cameras: &[SecurityCamera]) -> SystemTrayMenu {
     let mut menu = SystemTrayMenu::new();
-    
+
     // Main controls
     menu = menu
         .add_item(CustomMenuItem::new("open", "Open SLAIN"))
         .add_native_item(SystemTrayMenuItem::Separator);
-    
+
     // Camera submenu if cameras are configured
     if !cameras.is_empty() {
         let mut camera_menu = SystemTrayMenu::new();
-        
+
         for cam in cameras {
             let label = if cam.enabled {
                 format!("✓ {}", cam.name)
             } else {
                 cam.name.clone()
             };
-            camera_menu = camera_menu.add_item(
-                CustomMenuItem::new(format!("cam_{}", cam.id), label)
-            );
+            camera_menu =
+                camera_menu.add_item(CustomMenuItem::new(format!("cam_{}", cam.id), label));
         }
-        
+
         camera_menu = camera_menu
             .add_native_item(SystemTrayMenuItem::Separator)
             .add_item(CustomMenuItem::new("cam_all_on", "Show All Cameras"))
             .add_item(CustomMenuItem::new("cam_all_off", "Hide All Cameras"))
             .add_item(CustomMenuItem::new("cam_settings", "Camera Settings..."));
-        
+
         menu = menu
             .add_submenu(SystemTraySubmenu::new("Security Cameras", camera_menu))
             .add_native_item(SystemTrayMenuItem::Separator);
@@ -296,7 +315,7 @@ pub fn create_tray_menu(cameras: &[SecurityCamera]) -> SystemTrayMenu {
             .add_item(CustomMenuItem::new("cam_add", "Add Security Camera..."))
             .add_native_item(SystemTrayMenuItem::Separator);
     }
-    
+
     // PIP controls
     let pip_menu = SystemTrayMenu::new()
         .add_item(CustomMenuItem::new("pip_small", "Small (160x120)"))
@@ -307,21 +326,26 @@ pub fn create_tray_menu(cameras: &[SecurityCamera]) -> SystemTrayMenu {
         .add_item(CustomMenuItem::new("pip_top_right", "↗ Top Right"))
         .add_item(CustomMenuItem::new("pip_bottom_left", "↙ Bottom Left"))
         .add_item(CustomMenuItem::new("pip_bottom_right", "↘ Bottom Right"));
-    
+
     menu = menu.add_submenu(SystemTraySubmenu::new("PIP Settings", pip_menu));
-    
+
     // Settings
     let settings_menu = SystemTrayMenu::new()
-        .add_item(CustomMenuItem::new("autostart", 
-            if is_autostart_enabled() { "✓ Start with Windows" } else { "Start with Windows" }
+        .add_item(CustomMenuItem::new(
+            "autostart",
+            if is_autostart_enabled() {
+                "✓ Start with Windows"
+            } else {
+                "Start with Windows"
+            },
         ))
         .add_item(CustomMenuItem::new("minimize_tray", "Minimize to Tray"));
-    
+
     menu = menu
         .add_submenu(SystemTraySubmenu::new("Settings", settings_menu))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(CustomMenuItem::new("quit", "Quit SLAIN"));
-    
+
     menu
 }
 
@@ -386,7 +410,7 @@ fn update_tray_menu(app: &AppHandle) {
     // In real implementation, load cameras from settings
     let cameras: Vec<SecurityCamera> = Vec::new();
     let menu = create_tray_menu(&cameras);
-    
+
     if let Some(tray) = app.tray_handle_by_id("main") {
         let _ = tray.set_menu(menu);
     }
@@ -396,22 +420,19 @@ fn update_tray_menu(app: &AppHandle) {
 // Public Rust API
 // ============================================================================
 
-
 pub fn get_app_settings() -> AppSettings {
     // Load from file or return defaults
     load_settings().unwrap_or_default()
 }
 
-
 pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
     save_settings(&settings)?;
-    
+
     // Apply autostart setting
     set_autostart(settings.start_on_boot)?;
-    
+
     Ok(())
 }
-
 
 pub fn toggle_autostart() -> Result<bool, String> {
     let currently_enabled = is_autostart_enabled();
@@ -419,11 +440,9 @@ pub fn toggle_autostart() -> Result<bool, String> {
     Ok(!currently_enabled)
 }
 
-
 pub fn get_autostart_status() -> bool {
     is_autostart_enabled()
 }
-
 
 pub fn add_security_camera(camera: SecurityCamera) -> Result<(), String> {
     let mut settings = load_settings().unwrap_or_default();
@@ -431,13 +450,11 @@ pub fn add_security_camera(camera: SecurityCamera) -> Result<(), String> {
     save_settings(&settings)
 }
 
-
 pub fn remove_security_camera(camera_id: String) -> Result<(), String> {
     let mut settings = load_settings().unwrap_or_default();
     settings.cameras.retain(|c| c.id != camera_id);
     save_settings(&settings)
 }
-
 
 pub fn toggle_camera_pip(camera_id: String) -> Result<bool, String> {
     let mut settings = load_settings().unwrap_or_default();
@@ -456,10 +473,9 @@ pub fn toggle_camera_pip(camera_id: String) -> Result<bool, String> {
             save_settings(&settings)?;
             Ok(enabled)
         }
-        None => Err("Camera not found".to_string())
+        None => Err("Camera not found".to_string()),
     }
 }
-
 
 pub fn get_cameras() -> Vec<SecurityCamera> {
     load_settings().map(|s| s.cameras).unwrap_or_default()
@@ -479,26 +495,24 @@ fn settings_path() -> PathBuf {
 
 fn load_settings() -> Result<AppSettings, String> {
     let path = settings_path();
-    
+
     if !path.exists() {
         return Ok(AppSettings::default());
     }
-    
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read settings: {}", e))?;
-    
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse settings: {}", e))
+
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read settings: {}", e))?;
+
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {}", e))
 }
 
 fn save_settings(settings: &AppSettings) -> Result<(), String> {
     let path = settings_path();
-    
+
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
-    
-    std::fs::write(&path, content)
-        .map_err(|e| format!("Failed to write settings: {}", e))
+
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write settings: {}", e))
 }
 
 // ============================================================================
@@ -508,13 +522,13 @@ fn save_settings(settings: &AppSettings) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_pip_size() {
         assert_eq!(PipSize::Small.dimensions(), (160, 120));
         assert_eq!(PipSize::Medium.dimensions(), (320, 240));
     }
-    
+
     #[test]
     fn test_default_settings() {
         let settings = AppSettings::default();

@@ -73,7 +73,8 @@ pub const IID_IREFERENCECLOCK: GUID = GUID::from_u128(0x56a86897_0ad4_11ce_b03a_
 pub const CLSID_FILTERGRAPH: GUID = GUID::from_u128(0xe436ebb3_524f_11ce_9f53_0020af0ba770);
 
 /// CLSID_FilterGraphNoThread
-pub const CLSID_FILTERGRAPH_NOTHREAD: GUID = GUID::from_u128(0xe436ebb8_524f_11ce_9f53_0020af0ba770);
+pub const CLSID_FILTERGRAPH_NOTHREAD: GUID =
+    GUID::from_u128(0xe436ebb8_524f_11ce_9f53_0020af0ba770);
 
 /// CLSID_SampleGrabber (from qedit.dll)
 pub const CLSID_SAMPLEGRABBER: GUID = GUID::from_u128(0xc1f400a0_3f08_11d3_9f0b_006008039e37);
@@ -157,7 +158,7 @@ pub struct AmMediaType {
     pub temporal_compression: BOOL,
     pub sample_size: u32,
     pub format_type: GUID,
-    pub punk: *mut std::ffi::c_void,  // IUnknown pointer
+    pub punk: *mut std::ffi::c_void, // IUnknown pointer
     pub cb_format: u32,
     pub pb_format: *mut u8,
 }

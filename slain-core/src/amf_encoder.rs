@@ -1,6 +1,6 @@
 // AMD Advanced Media Framework (AMF) Encoder - FULL IMPLEMENTATION
 // Uses VCN hardware encoder on AMD GPUs (RX 400+, Ryzen APUs)
-// 
+//
 // This offloads video encoding from NVIDIA to AMD,
 // freeing NVIDIA for rendering/AI tasks
 
@@ -11,7 +11,6 @@ use std::time::Instant;
 
 use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
-
 
 // ============================================================================
 // AMF Types (from AMF SDK headers)
@@ -60,7 +59,12 @@ struct AMFFactoryVtbl {
     get_runtime_version: unsafe extern "system" fn(*mut c_void, *mut u64) -> AmfResult,
     get_trace_interface: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
     create_context: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
-    create_component: unsafe extern "system" fn(*mut c_void, *mut c_void, *const u16, *mut *mut c_void) -> AmfResult,
+    create_component: unsafe extern "system" fn(
+        *mut c_void,
+        *mut c_void,
+        *const u16,
+        *mut *mut c_void,
+    ) -> AmfResult,
     set_cache_folder: unsafe extern "system" fn(*mut c_void, *const u16) -> AmfResult,
     get_cache_folder: unsafe extern "system" fn(*mut c_void, *mut *const u16) -> AmfResult,
     get_debug_interface: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
@@ -85,7 +89,8 @@ struct AMFContextVtbl {
     get_dx11_device: unsafe extern "system" fn(*mut c_void, i32, *mut *mut c_void) -> AmfResult,
     lock_dx11: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     unlock_dx11: unsafe extern "system" fn(*mut c_void) -> AmfResult,
-    init_opengl: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> AmfResult,
+    init_opengl:
+        unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> AmfResult,
     get_opengl_context: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
     get_opengl_drawable: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
     lock_opengl: unsafe extern "system" fn(*mut c_void) -> AmfResult,
@@ -105,7 +110,8 @@ struct AMFContextVtbl {
     lock_vulkan: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     unlock_vulkan: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     alloc_buffer: unsafe extern "system" fn(*mut c_void, i32, usize, *mut *mut c_void) -> AmfResult,
-    alloc_surface: unsafe extern "system" fn(*mut c_void, i32, i32, i32, i32, *mut *mut c_void) -> AmfResult,
+    alloc_surface:
+        unsafe extern "system" fn(*mut c_void, i32, i32, i32, i32, *mut *mut c_void) -> AmfResult,
     get_compute_factory: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> AmfResult,
 }
 
@@ -123,7 +129,12 @@ struct AMFComponentVtbl {
     get_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut AMFVariant) -> AmfResult,
     has_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
     get_property_count: unsafe extern "system" fn(*mut c_void, *mut usize) -> AmfResult,
-    get_property_at: unsafe extern "system" fn(*mut c_void, usize, *mut *const u16, *mut AMFVariant) -> AmfResult,
+    get_property_at: unsafe extern "system" fn(
+        *mut c_void,
+        usize,
+        *mut *const u16,
+        *mut AMFVariant,
+    ) -> AmfResult,
     clear: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     add_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
     remove_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
@@ -154,7 +165,12 @@ struct AMFSurfaceVtbl {
     get_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut AMFVariant) -> AmfResult,
     has_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
     get_property_count: unsafe extern "system" fn(*mut c_void, *mut usize) -> AmfResult,
-    get_property_at: unsafe extern "system" fn(*mut c_void, usize, *mut *const u16, *mut AMFVariant) -> AmfResult,
+    get_property_at: unsafe extern "system" fn(
+        *mut c_void,
+        usize,
+        *mut *const u16,
+        *mut AMFVariant,
+    ) -> AmfResult,
     clear: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     add_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
     remove_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
@@ -207,7 +223,12 @@ struct AMFBufferVtbl {
     get_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut AMFVariant) -> AmfResult,
     has_property: unsafe extern "system" fn(*mut c_void, *const u16, *mut bool) -> AmfResult,
     get_property_count: unsafe extern "system" fn(*mut c_void, *mut usize) -> AmfResult,
-    get_property_at: unsafe extern "system" fn(*mut c_void, usize, *mut *const u16, *mut AMFVariant) -> AmfResult,
+    get_property_at: unsafe extern "system" fn(
+        *mut c_void,
+        usize,
+        *mut *const u16,
+        *mut AMFVariant,
+    ) -> AmfResult,
     clear: unsafe extern "system" fn(*mut c_void) -> AmfResult,
     add_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
     remove_observer: unsafe extern "system" fn(*mut c_void, *mut c_void) -> AmfResult,
@@ -261,11 +282,13 @@ impl AMFVariant {
             value: AMFVariantValue { int64_val: val },
         }
     }
-    
+
     fn from_rate(num: u32, den: u32) -> Self {
         Self {
             variant_type: 9, // AMF_VARIANT_RATE
-            value: AMFVariantValue { rate_val: [num, den] },
+            value: AMFVariantValue {
+                rate_val: [num, den],
+            },
         }
     }
 }
@@ -406,13 +429,13 @@ impl AmfEncoder {
     pub fn new(config: AmfEncoderConfig) -> Result<Self, String> {
         #[cfg(target_os = "windows")]
         let lib_name = "amfrt64.dll";
-        
+
         #[cfg(not(target_os = "windows"))]
         let lib_name = "libamfrt64.so.1";
-        
+
         let library = unsafe { Library::new(lib_name) }
             .map_err(|e| format!("Failed to load AMF: {}. AMD driver required.", e))?;
-        
+
         Ok(Self {
             _library: library,
             factory: ptr::null_mut(),
@@ -425,67 +448,67 @@ impl AmfEncoder {
             start_time: None,
         })
     }
-    
+
     /// Initialize the encoder
     pub fn initialize(&mut self) -> Result<(), String> {
         if self.initialized.load(Ordering::SeqCst) {
             return Ok(());
         }
-        
+
         unsafe {
             // Query AMF version
-            let query_version: Symbol<AMFQueryVersionFn> = self._library.get(b"AMFQueryVersion\0")
+            let query_version: Symbol<AMFQueryVersionFn> = self
+                ._library
+                .get(b"AMFQueryVersion\0")
                 .map_err(|e| format!("AMFQueryVersion not found: {}", e))?;
-            
+
             let mut version: u64 = 0;
             let result = query_version(&mut version);
             if result != AMF_OK {
                 return Err(format!("AMFQueryVersion failed: {}", result));
             }
-            
-            tracing::info!("AMF version: {}.{}.{}", 
+
+            tracing::info!(
+                "AMF version: {}.{}.{}",
                 (version >> 48) & 0xFFFF,
                 (version >> 32) & 0xFFFF,
                 (version >> 16) & 0xFFFF
             );
-            
+
             // Initialize AMF
-            let amf_init: Symbol<AMFInitFn> = self._library.get(b"AMFInit\0")
+            let amf_init: Symbol<AMFInitFn> = self
+                ._library
+                .get(b"AMFInit\0")
                 .map_err(|e| format!("AMFInit not found: {}", e))?;
-            
+
             let mut factory_ptr: *mut c_void = ptr::null_mut();
             let result = amf_init(version, &mut factory_ptr);
             if result != AMF_OK || factory_ptr.is_null() {
                 return Err(format!("AMFInit failed: {}", result));
             }
             self.factory = factory_ptr as *mut AMFFactory;
-            
+
             // Create context
             let factory = &*self.factory;
             let mut context_ptr: *mut c_void = ptr::null_mut();
-            let result = ((*factory.vtbl).create_context)(
-                self.factory as *mut c_void,
-                &mut context_ptr
-            );
+            let result =
+                ((*factory.vtbl).create_context)(self.factory as *mut c_void, &mut context_ptr);
             if result != AMF_OK || context_ptr.is_null() {
                 return Err(format!("CreateContext failed: {}", result));
             }
             self.context = context_ptr as *mut AMFContext;
-            
+
             // Initialize D3D11 (Windows)
             #[cfg(target_os = "windows")]
             {
                 let context = &*self.context;
-                let result = ((*context.vtbl).init_dx11)(
-                    self.context as *mut c_void,
-                    ptr::null_mut(),
-                    0
-                );
+                let result =
+                    ((*context.vtbl).init_dx11)(self.context as *mut c_void, ptr::null_mut(), 0);
                 if result != AMF_OK {
                     return Err(format!("InitDX11 failed: {}", result));
                 }
             }
-            
+
             // Create encoder component
             let codec_id = match self.config.codec {
                 AmfCodec::H264Avc => "AMFVideoEncoderVCE_AVC",
@@ -493,23 +516,26 @@ impl AmfEncoder {
                 AmfCodec::Av1 => "AMFVideoEncoder_AV1",
             };
             let codec_wide = to_wide_string(codec_id);
-            
+
             let factory = &*self.factory;
             let mut encoder_ptr: *mut c_void = ptr::null_mut();
             let result = ((*factory.vtbl).create_component)(
                 self.factory as *mut c_void,
                 self.context as *mut c_void,
                 codec_wide.as_ptr(),
-                &mut encoder_ptr
+                &mut encoder_ptr,
             );
             if result != AMF_OK || encoder_ptr.is_null() {
-                return Err(format!("CreateComponent failed: {}. Codec {} may not be supported.", result, codec_id));
+                return Err(format!(
+                    "CreateComponent failed: {}. Codec {} may not be supported.",
+                    result, codec_id
+                ));
             }
             self.encoder = encoder_ptr as *mut AMFComponent;
-            
+
             // Configure encoder
             self.configure_encoder()?;
-            
+
             // Initialize encoder
             let surface_format = match self.config.color_format {
                 AmfSurfaceFormat::Nv12 => AMF_SURFACE_NV12,
@@ -517,123 +543,138 @@ impl AmfEncoder {
                 AmfSurfaceFormat::Bgra => AMF_SURFACE_BGRA,
                 _ => AMF_SURFACE_NV12,
             };
-            
+
             let encoder = &*self.encoder;
             let result = ((*encoder.vtbl).init)(
                 self.encoder as *mut c_void,
                 surface_format,
                 self.config.width as i32,
-                self.config.height as i32
+                self.config.height as i32,
             );
             if result != AMF_OK {
                 return Err(format!("Encoder init failed: {}", result));
             }
-            
+
             self.initialized.store(true, Ordering::SeqCst);
             self.start_time = Some(Instant::now());
-            
-            tracing::info!("AMF {} encoder initialized: {}x{} @ {} fps",
+
+            tracing::info!(
+                "AMF {} encoder initialized: {}x{} @ {} fps",
                 codec_id,
                 self.config.width,
                 self.config.height,
                 self.config.framerate_num / self.config.framerate_den
             );
-            
+
             Ok(())
         }
     }
-    
+
     /// Configure encoder properties
     fn configure_encoder(&self) -> Result<(), String> {
         unsafe {
             let encoder = &*self.encoder;
             let set_prop = (*encoder.vtbl).set_property;
-            
+
             let usage = if self.config.low_latency {
                 AMF_VIDEO_ENCODER_HEVC_USAGE_LOW_LATENCY
             } else {
                 AMF_VIDEO_ENCODER_HEVC_USAGE_TRANSCODING
             };
-            
+
             let quality = match self.config.quality_preset {
                 AmfQualityPreset::Speed => AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED,
                 AmfQualityPreset::Balanced => AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_BALANCED,
                 AmfQualityPreset::Quality => AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_QUALITY,
             };
-            
+
             let rc_method = match self.config.rate_control {
                 AmfRateControl::Cqp => AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_CQP,
                 AmfRateControl::Cbr => AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_CBR,
                 AmfRateControl::Vbr => AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_VBR,
                 AmfRateControl::VbrLatency => AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_VBR_LAT,
             };
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("Usage").as_ptr(),
-                AMFVariant::from_int64(usage));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_int64(usage),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("QualityPreset").as_ptr(),
-                AMFVariant::from_int64(quality));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_int64(quality),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("RateControlMethod").as_ptr(),
-                AMFVariant::from_int64(rc_method));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_int64(rc_method),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("TargetBitrate").as_ptr(),
-                AMFVariant::from_int64(self.config.bitrate_bps as i64));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_int64(self.config.bitrate_bps as i64),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("PeakBitrate").as_ptr(),
-                AMFVariant::from_int64(self.config.max_bitrate_bps as i64));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_int64(self.config.max_bitrate_bps as i64),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("FrameRate").as_ptr(),
-                AMFVariant::from_rate(self.config.framerate_num, self.config.framerate_den));
-            
-            let _ = set_prop(self.encoder as *mut c_void,
+                AMFVariant::from_rate(self.config.framerate_num, self.config.framerate_den),
+            );
+
+            let _ = set_prop(
+                self.encoder as *mut c_void,
                 to_wide_string("GOPSize").as_ptr(),
-                AMFVariant::from_int64(self.config.gop_size as i64));
+                AMFVariant::from_int64(self.config.gop_size as i64),
+            );
         }
-        
+
         Ok(())
     }
-    
+
     /// Encode a frame
     pub fn encode_frame(&mut self, frame_data: &[u8], pts: i64) -> Result<Vec<u8>, String> {
         if !self.initialized.load(Ordering::SeqCst) {
             return Err("Encoder not initialized".to_string());
         }
-        
+
         unsafe {
             let context = &*self.context;
             let mut surface_ptr: *mut c_void = ptr::null_mut();
-            
+
             let surface_format = match self.config.color_format {
                 AmfSurfaceFormat::Nv12 => AMF_SURFACE_NV12,
                 AmfSurfaceFormat::P010 => AMF_SURFACE_P010,
                 AmfSurfaceFormat::Bgra => AMF_SURFACE_BGRA,
                 _ => AMF_SURFACE_NV12,
             };
-            
+
             let result = ((*context.vtbl).alloc_surface)(
                 self.context as *mut c_void,
                 AMF_MEMORY_HOST,
                 surface_format,
                 self.config.width as i32,
                 self.config.height as i32,
-                &mut surface_ptr
+                &mut surface_ptr,
             );
-            
+
             if result != AMF_OK || surface_ptr.is_null() {
                 return Err(format!("Failed to allocate surface: {}", result));
             }
-            
+
             let surface = surface_ptr as *mut AMFSurface;
             let surface_vtbl = &*(*surface).vtbl;
             let planes_count = (surface_vtbl.get_planes_count)(surface_ptr);
-            
+
             let mut data_offset = 0usize;
             for i in 0..planes_count {
                 let mut plane_ptr: *mut c_void = ptr::null_mut();
@@ -641,166 +682,167 @@ impl AmfEncoder {
                 if result != AMF_OK || plane_ptr.is_null() {
                     continue;
                 }
-                
+
                 let plane = plane_ptr as *mut AMFPlane;
                 let plane_vtbl = &*(*plane).vtbl;
-                
+
                 let width = (plane_vtbl.get_width)(plane_ptr) as usize;
                 let height = (plane_vtbl.get_height)(plane_ptr) as usize;
                 let pitch = (plane_vtbl.get_h_pitch)(plane_ptr) as usize;
                 let native_ptr = (plane_vtbl.get_native)(plane_ptr);
-                
+
                 if native_ptr.is_null() {
                     continue;
                 }
-                
+
                 let src_pitch = width;
                 for row in 0..height {
                     let src_offset = data_offset + row * src_pitch;
                     let dst_offset = row * pitch;
-                    
+
                     if src_offset + src_pitch <= frame_data.len() {
                         ptr::copy_nonoverlapping(
                             frame_data.as_ptr().add(src_offset),
                             native_ptr.add(dst_offset),
-                            src_pitch.min(pitch)
+                            src_pitch.min(pitch),
                         );
                     }
                 }
-                
+
                 data_offset += width * height;
             }
-            
+
             (surface_vtbl.set_pts)(surface_ptr, pts);
-            
+
             let encoder = &*self.encoder;
-            let mut result = ((*encoder.vtbl).submit_input)(
-                self.encoder as *mut c_void,
-                surface_ptr
-            );
-            
+            let mut result =
+                ((*encoder.vtbl).submit_input)(self.encoder as *mut c_void, surface_ptr);
+
             while result == AMF_INPUT_FULL {
                 let _ = self.poll_output();
-                result = ((*encoder.vtbl).submit_input)(
-                    self.encoder as *mut c_void,
-                    surface_ptr
-                );
+                result = ((*encoder.vtbl).submit_input)(self.encoder as *mut c_void, surface_ptr);
             }
-            
+
             let surface = surface_ptr as *mut AMFSurface;
             ((*(*surface).vtbl).release)(surface_ptr);
-            
+
             if result != AMF_OK {
                 return Err(format!("SubmitInput failed: {}", result));
             }
-            
+
             self.frames_encoded.fetch_add(1, Ordering::Relaxed);
-            
+
             self.poll_output()
         }
     }
-    
+
     /// Poll for encoded output
     fn poll_output(&mut self) -> Result<Vec<u8>, String> {
         unsafe {
             let encoder = &*self.encoder;
             let mut data_ptr: *mut c_void = ptr::null_mut();
-            
-            let result = ((*encoder.vtbl).query_output)(
-                self.encoder as *mut c_void,
-                &mut data_ptr
-            );
-            
+
+            let result = ((*encoder.vtbl).query_output)(self.encoder as *mut c_void, &mut data_ptr);
+
             if result == AMF_REPEAT || result == AMF_EOF {
                 return Ok(Vec::new());
             }
-            
+
             if result != AMF_OK || data_ptr.is_null() {
                 return Ok(Vec::new());
             }
-            
+
             let buffer = data_ptr as *mut AMFBuffer;
             let buffer_vtbl = &*(*buffer).vtbl;
-            
+
             let size = (buffer_vtbl.get_size)(data_ptr);
             let native = (buffer_vtbl.get_native)(data_ptr);
-            
+
             if native.is_null() || size == 0 {
                 (buffer_vtbl.release)(data_ptr);
                 return Ok(Vec::new());
             }
-            
+
             let mut output = vec![0u8; size];
             ptr::copy_nonoverlapping(native, output.as_mut_ptr(), size);
-            
+
             self.bytes_output.fetch_add(size as u64, Ordering::Relaxed);
-            
+
             (buffer_vtbl.release)(data_ptr);
-            
+
             Ok(output)
         }
     }
-    
+
     /// Flush encoder and get remaining frames
     pub fn flush(&mut self) -> Result<Vec<Vec<u8>>, String> {
         if !self.initialized.load(Ordering::SeqCst) {
             return Ok(Vec::new());
         }
-        
+
         let mut outputs = Vec::new();
-        
+
         unsafe {
             let encoder = &*self.encoder;
             let _ = ((*encoder.vtbl).drain)(self.encoder as *mut c_void);
-            
+
             loop {
                 let mut data_ptr: *mut c_void = ptr::null_mut();
-                let result = ((*encoder.vtbl).query_output)(
-                    self.encoder as *mut c_void,
-                    &mut data_ptr
-                );
-                
+                let result =
+                    ((*encoder.vtbl).query_output)(self.encoder as *mut c_void, &mut data_ptr);
+
                 if result == AMF_EOF || data_ptr.is_null() {
                     break;
                 }
-                
+
                 if result == AMF_OK {
                     let buffer = data_ptr as *mut AMFBuffer;
                     let buffer_vtbl = &*(*buffer).vtbl;
-                    
+
                     let size = (buffer_vtbl.get_size)(data_ptr);
                     let native = (buffer_vtbl.get_native)(data_ptr);
-                    
+
                     if !native.is_null() && size > 0 {
                         let mut output = vec![0u8; size];
                         ptr::copy_nonoverlapping(native, output.as_mut_ptr(), size);
                         outputs.push(output);
                         self.bytes_output.fetch_add(size as u64, Ordering::Relaxed);
                     }
-                    
+
                     (buffer_vtbl.release)(data_ptr);
                 }
             }
         }
-        
+
         Ok(outputs)
     }
-    
+
     /// Get encoder statistics
     pub fn get_stats(&self) -> AmfEncoderStats {
         let frames = self.frames_encoded.load(Ordering::Relaxed);
         let bytes = self.bytes_output.load(Ordering::Relaxed);
-        let elapsed = self.start_time.map(|t| t.elapsed().as_secs_f64()).unwrap_or(1.0);
-        
+        let elapsed = self
+            .start_time
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(1.0);
+
         AmfEncoderStats {
             frames_encoded: frames,
             bytes_output: bytes,
-            average_bitrate_bps: if elapsed > 0.0 { (bytes as f64 * 8.0 / elapsed) as u64 } else { 0 },
-            encode_fps: if elapsed > 0.0 { frames as f64 / elapsed } else { 0.0 },
+            average_bitrate_bps: if elapsed > 0.0 {
+                (bytes as f64 * 8.0 / elapsed) as u64
+            } else {
+                0
+            },
+            encode_fps: if elapsed > 0.0 {
+                frames as f64 / elapsed
+            } else {
+                0.0
+            },
             gpu_usage_percent: 0.0,
         }
     }
-    
+
     /// Get encoder info
     pub fn info(&self) -> serde_json::Value {
         serde_json::json!({
@@ -824,19 +866,19 @@ impl Drop for AmfEncoder {
                 let _ = ((*encoder.vtbl).terminate)(self.encoder as *mut c_void);
                 ((*encoder.vtbl).release)(self.encoder as *mut c_void);
             }
-            
+
             if !self.context.is_null() {
                 let context = &*self.context;
                 let _ = ((*context.vtbl).terminate)(self.context as *mut c_void);
                 ((*context.vtbl).release)(self.context as *mut c_void);
             }
-            
+
             if !self.factory.is_null() {
                 let factory = &*self.factory;
                 ((*factory.vtbl).release)(self.factory as *mut c_void);
             }
         }
-        
+
         tracing::info!("AMF encoder released");
     }
 }
@@ -863,14 +905,13 @@ struct RecordingSession {
 // Public Rust API
 // ============================================================================
 
-
 pub fn amf_capabilities() -> serde_json::Value {
     #[cfg(target_os = "windows")]
     let available = unsafe { Library::new("amfrt64.dll").is_ok() };
-    
+
     #[cfg(not(target_os = "windows"))]
     let available = false;
-    
+
     serde_json::json!({
         "available": available,
         "codecs": ["H.264/AVC", "H.265/HEVC", "AV1"],
@@ -886,7 +927,6 @@ pub fn amf_capabilities() -> serde_json::Value {
     })
 }
 
-
 pub fn amf_start_recording(
     path: String,
     width: u32,
@@ -895,11 +935,11 @@ pub fn amf_start_recording(
     bitrate_mbps: u32,
 ) -> Result<String, String> {
     let mut state = RECORDING_STATE.lock();
-    
+
     if state.is_some() {
         return Err("Already recording".to_string());
     }
-    
+
     let config = AmfEncoderConfig {
         width,
         height,
@@ -909,51 +949,46 @@ pub fn amf_start_recording(
         max_bitrate_bps: (bitrate_mbps as u64) * 1_500_000,
         ..Default::default()
     };
-    
+
     let mut encoder = AmfEncoder::new(config)?;
     encoder.initialize()?;
-    
-    let file = File::create(&path)
-        .map_err(|e| format!("Failed to create output file: {}", e))?;
-    
+
+    let file = File::create(&path).map_err(|e| format!("Failed to create output file: {}", e))?;
+
     *state = Some(RecordingSession {
         encoder,
         output_file: file,
         frame_count: 0,
     });
-    
+
     Ok(format!("Recording started: {}", path))
 }
 
-
 pub fn amf_stop_recording() -> Result<serde_json::Value, String> {
     let mut state = RECORDING_STATE.lock();
-    
-    let session = state.take()
-        .ok_or("Not recording")?;
-    
+
+    let session = state.take().ok_or("Not recording")?;
+
     let mut encoder = session.encoder;
     let mut file = session.output_file;
-    
+
     let remaining = encoder.flush()?;
     for data in remaining {
         file.write_all(&data)
             .map_err(|e| format!("Write error: {}", e))?;
     }
-    
+
     let stats = encoder.get_stats();
-    
+
     Ok(serde_json::json!({
         "frames": session.frame_count,
         "stats": stats,
     }))
 }
 
-
 pub fn amf_is_recording() -> bool {
     RECORDING_STATE.lock().is_some()
 }
-
 
 pub fn amf_encoder_info() -> serde_json::Value {
     serde_json::json!({

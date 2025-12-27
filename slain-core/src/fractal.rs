@@ -25,8 +25,8 @@
 //!
 //! This produces smooth, anti-aliased fractal renders without supersampling.
 
-use std::f64::consts::{PI, LN_2};
 use serde::{Deserialize, Serialize};
+use std::f64::consts::{LN_2, PI};
 
 // ============================================================================
 // Complex Number Operations
@@ -164,11 +164,11 @@ impl Default for Palette {
         // Classic blue-gold palette
         Self {
             colors: vec![
-                [0, 7, 100],      // Dark blue
-                [32, 107, 203],   // Blue
-                [237, 255, 255],  // White
-                [255, 170, 0],    // Gold
-                [0, 2, 0],        // Black
+                [0, 7, 100],     // Dark blue
+                [32, 107, 203],  // Blue
+                [237, 255, 255], // White
+                [255, 170, 0],   // Gold
+                [0, 2, 0],       // Black
             ],
             offset: 0.0,
             scale: 1.0,
@@ -227,10 +227,7 @@ impl Palette {
     /// Grayscale
     pub fn grayscale() -> Self {
         Self {
-            colors: vec![
-                [0, 0, 0],
-                [255, 255, 255],
-            ],
+            colors: vec![[0, 0, 0], [255, 255, 255]],
             offset: 0.0,
             scale: 1.0,
         }
@@ -302,7 +299,7 @@ impl Default for FractalParams {
             center_y: 0.0,
             zoom: 1.0,
             max_iter: 1000,
-            bailout: 1e10,  // Large for distance estimation
+            bailout: 1e10, // Large for distance estimation
             julia_re: -0.7,
             julia_im: 0.27015,
             intensity_x: 360.0,
@@ -338,9 +335,14 @@ pub struct IterResult {
 ///
 /// z_{n+1} = z_n² + c
 /// z'_{n+1} = 2·z_n·z'_n + 1  (derivative with respect to c)
-pub fn iterate_mandelbrot_de(c: Complex, max_iter: u32, bailout: f64, intensity_x: f64) -> IterResult {
+pub fn iterate_mandelbrot_de(
+    c: Complex,
+    max_iter: u32,
+    bailout: f64,
+    intensity_x: f64,
+) -> IterResult {
     let mut z = Complex::new(0.0, 0.0);
-    let mut dz = Complex::new(0.0, 0.0);  // Derivative
+    let mut dz = Complex::new(0.0, 0.0); // Derivative
 
     let mut iterations = 0u32;
     let bailout_sqr = bailout * bailout;
@@ -398,9 +400,15 @@ pub fn iterate_mandelbrot_de(c: Complex, max_iter: u32, bailout: f64, intensity_
 }
 
 /// Iterate Julia set with derivative tracking
-pub fn iterate_julia_de(z_start: Complex, c: Complex, max_iter: u32, bailout: f64, intensity_x: f64) -> IterResult {
+pub fn iterate_julia_de(
+    z_start: Complex,
+    c: Complex,
+    max_iter: u32,
+    bailout: f64,
+    intensity_x: f64,
+) -> IterResult {
     let mut z = z_start;
-    let mut dz = Complex::new(1.0, 0.0);  // Derivative w.r.t. z
+    let mut dz = Complex::new(1.0, 0.0); // Derivative w.r.t. z
 
     let mut iterations = 0u32;
     let bailout_sqr = bailout * bailout;
@@ -453,7 +461,12 @@ pub fn iterate_julia_de(z_start: Complex, c: Complex, max_iter: u32, bailout: f6
 }
 
 /// Iterate Burning Ship fractal
-pub fn iterate_burning_ship_de(c: Complex, max_iter: u32, bailout: f64, intensity_x: f64) -> IterResult {
+pub fn iterate_burning_ship_de(
+    c: Complex,
+    max_iter: u32,
+    bailout: f64,
+    intensity_x: f64,
+) -> IterResult {
     let mut z = Complex::new(0.0, 0.0);
     let mut dz = Complex::new(0.0, 0.0);
 
@@ -560,23 +573,43 @@ impl FractalRenderer {
         let c = self.pixel_to_complex(px, py);
 
         let result = match self.params.fractal_type {
-            FractalType::Mandelbrot => {
-                iterate_mandelbrot_de(c, self.params.max_iter, self.params.bailout, self.params.intensity_x)
-            }
+            FractalType::Mandelbrot => iterate_mandelbrot_de(
+                c,
+                self.params.max_iter,
+                self.params.bailout,
+                self.params.intensity_x,
+            ),
             FractalType::Julia => {
                 let julia_c = Complex::new(self.params.julia_re, self.params.julia_im);
-                iterate_julia_de(c, julia_c, self.params.max_iter, self.params.bailout, self.params.intensity_x)
+                iterate_julia_de(
+                    c,
+                    julia_c,
+                    self.params.max_iter,
+                    self.params.bailout,
+                    self.params.intensity_x,
+                )
             }
-            FractalType::BurningShip => {
-                iterate_burning_ship_de(c, self.params.max_iter, self.params.bailout, self.params.intensity_x)
-            }
+            FractalType::BurningShip => iterate_burning_ship_de(
+                c,
+                self.params.max_iter,
+                self.params.bailout,
+                self.params.intensity_x,
+            ),
             FractalType::Tricorn => {
                 // Similar to Mandelbrot but conjugate
-                iterate_mandelbrot_de(Complex::new(c.re, -c.im), self.params.max_iter, self.params.bailout, self.params.intensity_x)
+                iterate_mandelbrot_de(
+                    Complex::new(c.re, -c.im),
+                    self.params.max_iter,
+                    self.params.bailout,
+                    self.params.intensity_x,
+                )
             }
-            _ => {
-                iterate_mandelbrot_de(c, self.params.max_iter, self.params.bailout, self.params.intensity_x)
-            }
+            _ => iterate_mandelbrot_de(
+                c,
+                self.params.max_iter,
+                self.params.bailout,
+                self.params.intensity_x,
+            ),
         };
 
         if !result.escaped {
@@ -586,24 +619,18 @@ impl FractalRenderer {
 
         // Color based on mode
         let t = match self.params.color_mode {
-            ColorMode::Smooth => {
-                (result.smooth_iter / self.params.max_iter as f64).fract()
-            }
+            ColorMode::Smooth => (result.smooth_iter / self.params.max_iter as f64).fract(),
             ColorMode::DistanceEstimate => {
                 // Use intensity from distance formula
                 let i = result.intensity.min(1.0);
                 i
             }
-            ColorMode::Angle => {
-                (result.z.im.atan2(result.z.re) / (2.0 * PI) + 0.5).fract()
-            }
+            ColorMode::Angle => (result.z.im.atan2(result.z.re) / (2.0 * PI) + 0.5).fract(),
             ColorMode::Potential => {
                 let pot = result.z.norm().ln() / 2.0_f64.powi(result.iterations as i32);
                 (pot * 10.0).fract()
             }
-            _ => {
-                (result.smooth_iter / 50.0).fract()
-            }
+            _ => (result.smooth_iter / 50.0).fract(),
         };
 
         let rgb = self.params.palette.sample(t);
@@ -877,7 +904,7 @@ mod tests {
     #[test]
     fn test_distance_estimation() {
         // Point near boundary should have small distance
-        let c = Complex::new(-0.75, 0.0);  // Near main cardioid
+        let c = Complex::new(-0.75, 0.0); // Near main cardioid
         let result = iterate_mandelbrot_de(c, 1000, 1e10, 360.0);
         // Distance should be positive and small
         if result.escaped {

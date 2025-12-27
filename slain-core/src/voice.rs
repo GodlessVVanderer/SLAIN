@@ -1,15 +1,18 @@
 // VOICE - Native Rust Voice Control
-// 
+//
 // Wake word detection and command recognition
 // No Python, no external services, runs locally
-// 
+//
 // Wake words: "SLAIN", "Hey SLAIN", "Computer"
 // Public Rust API parsed locally using pattern matching
 
-use std::sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}};
+use serde::{Deserialize, Serialize};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 use std::thread;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 
 use once_cell::sync::Lazy;
 
@@ -22,20 +25,20 @@ pub struct VoiceConfig {
     pub enabled: bool,
     pub wake_word: WakeWord,
     pub custom_wake_word: Option<String>,
-    pub sensitivity: f32,        // 0.0-1.0
-    pub timeout_secs: u32,       // How long to listen after wake word
-    pub feedback_sounds: bool,   // Play confirmation sounds
-    pub push_to_talk: bool,      // Require key hold instead of wake word
+    pub sensitivity: f32,      // 0.0-1.0
+    pub timeout_secs: u32,     // How long to listen after wake word
+    pub feedback_sounds: bool, // Play confirmation sounds
+    pub push_to_talk: bool,    // Require key hold instead of wake word
     pub push_to_talk_key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WakeWord {
-    Slain,          // "SLAIN"
-    HeySlain,       // "Hey SLAIN"
-    Computer,       // "Computer"
-    Custom,         // User-defined
-    None,           // Push-to-talk only
+    Slain,    // "SLAIN"
+    HeySlain, // "Hey SLAIN"
+    Computer, // "Computer"
+    Custom,   // User-defined
+    None,     // Push-to-talk only
 }
 
 impl Default for VoiceConfig {
@@ -64,44 +67,44 @@ pub enum VoiceCommand {
     Pause,
     Stop,
     Resume,
-    
+
     // Navigation
     NextChapter,
     PreviousChapter,
-    SkipForward(u32),      // seconds
+    SkipForward(u32), // seconds
     SkipBackward(u32),
     GoToTime(u32, u32, u32), // hours, minutes, seconds
-    
+
     // Volume
     VolumeUp,
     VolumeDown,
     Mute,
     Unmute,
-    SetVolume(u32),        // 0-100
-    
+    SetVolume(u32), // 0-100
+
     // Display
     Fullscreen,
     ExitFullscreen,
     ToggleFullscreen,
-    
+
     // Subtitles
     SubtitlesOn,
     SubtitlesOff,
     NextSubtitle,
-    
+
     // Channels (IPTV)
     ChannelUp,
     ChannelDown,
     GoToChannel(String),
-    
+
     // Search
     Search(String),
-    
+
     // System
     ShowHelp,
     WhatTimeIsIt,
     HowMuchLeft,
-    
+
     // Meta
     CancelCommand,
     Unknown(String),
@@ -111,7 +114,7 @@ impl VoiceCommand {
     /// Parse text into a command
     pub fn parse(text: &str) -> Self {
         let text = text.to_lowercase().trim().to_string();
-        
+
         // Playback commands
         if text == "play" || text == "start" || text == "begin" {
             return Self::Play;
@@ -125,7 +128,7 @@ impl VoiceCommand {
         if text == "resume" || text == "continue" {
             return Self::Resume;
         }
-        
+
         // Skip commands
         if text.contains("skip") || text.contains("forward") {
             if let Some(secs) = extract_seconds(&text) {
@@ -139,7 +142,7 @@ impl VoiceCommand {
             }
             return Self::SkipBackward(10);
         }
-        
+
         // Chapter navigation
         if text.contains("next chapter") {
             return Self::NextChapter;
@@ -147,7 +150,7 @@ impl VoiceCommand {
         if text.contains("previous chapter") || text.contains("last chapter") {
             return Self::PreviousChapter;
         }
-        
+
         // Volume commands
         if text.contains("volume up") || text.contains("louder") {
             return Self::VolumeUp;
@@ -166,7 +169,7 @@ impl VoiceCommand {
                 return Self::SetVolume(level.min(100));
             }
         }
-        
+
         // Fullscreen
         if text == "fullscreen" || text == "full screen" {
             return Self::Fullscreen;
@@ -177,7 +180,7 @@ impl VoiceCommand {
         if text == "toggle fullscreen" {
             return Self::ToggleFullscreen;
         }
-        
+
         // Subtitles
         if text.contains("subtitle") && (text.contains("on") || text.contains("enable")) {
             return Self::SubtitlesOn;
@@ -188,7 +191,7 @@ impl VoiceCommand {
         if text.contains("next subtitle") {
             return Self::NextSubtitle;
         }
-        
+
         // Channel commands
         if text == "channel up" || text == "next channel" {
             return Self::ChannelUp;
@@ -197,7 +200,8 @@ impl VoiceCommand {
             return Self::ChannelDown;
         }
         if text.starts_with("go to channel") || text.starts_with("switch to") {
-            let channel = text.replace("go to channel", "")
+            let channel = text
+                .replace("go to channel", "")
                 .replace("switch to", "")
                 .trim()
                 .to_string();
@@ -205,10 +209,11 @@ impl VoiceCommand {
                 return Self::GoToChannel(channel);
             }
         }
-        
+
         // Search
         if text.starts_with("search for") || text.starts_with("find") {
-            let query = text.replace("search for", "")
+            let query = text
+                .replace("search for", "")
                 .replace("find", "")
                 .trim()
                 .to_string();
@@ -216,7 +221,7 @@ impl VoiceCommand {
                 return Self::Search(query);
             }
         }
-        
+
         // Time queries
         if text.contains("what time") || text.contains("current time") {
             return Self::WhatTimeIsIt;
@@ -224,27 +229,27 @@ impl VoiceCommand {
         if text.contains("how much") && text.contains("left") {
             return Self::HowMuchLeft;
         }
-        
+
         // Help
         if text == "help" || text.contains("what can you do") {
             return Self::ShowHelp;
         }
-        
+
         // Cancel
         if text == "cancel" || text == "never mind" || text == "forget it" {
             return Self::CancelCommand;
         }
-        
+
         // Time navigation
         if text.contains("go to") || text.contains("jump to") {
             if let Some((h, m, s)) = parse_time(&text) {
                 return Self::GoToTime(h, m, s);
             }
         }
-        
+
         Self::Unknown(text)
     }
-    
+
     /// Get a description of the command
     pub fn description(&self) -> String {
         match self {
@@ -276,13 +281,21 @@ fn extract_seconds(text: &str) -> Option<u32> {
             return Some(n);
         }
     }
-    
+
     // Word numbers
-    if text.contains("ten") { return Some(10); }
-    if text.contains("thirty") { return Some(30); }
-    if text.contains("five") && !text.contains("fifteen") { return Some(5); }
-    if text.contains("fifteen") { return Some(15); }
-    
+    if text.contains("ten") {
+        return Some(10);
+    }
+    if text.contains("thirty") {
+        return Some(30);
+    }
+    if text.contains("five") && !text.contains("fifteen") {
+        return Some(5);
+    }
+    if text.contains("fifteen") {
+        return Some(15);
+    }
+
     None
 }
 
@@ -297,16 +310,14 @@ fn extract_number(text: &str) -> Option<u32> {
 
 fn parse_time(text: &str) -> Option<(u32, u32, u32)> {
     // "go to 1:30:00" or "jump to 5 minutes"
-    
+
     // Try HH:MM:SS or MM:SS format
     let parts: Vec<&str> = text.split(&[':', ' '][..]).collect();
-    let numbers: Vec<u32> = parts.iter()
-        .filter_map(|p| p.parse().ok())
-        .collect();
-    
+    let numbers: Vec<u32> = parts.iter().filter_map(|p| p.parse().ok()).collect();
+
     match numbers.len() {
-        1 => Some((0, numbers[0], 0)), // Just minutes
-        2 => Some((0, numbers[0], numbers[1])), // MM:SS
+        1 => Some((0, numbers[0], 0)),                   // Just minutes
+        2 => Some((0, numbers[0], numbers[1])),          // MM:SS
         3 => Some((numbers[0], numbers[1], numbers[2])), // HH:MM:SS
         _ => None,
     }
@@ -328,11 +339,11 @@ pub fn detect_voice_activity(samples: &[f32], threshold: f32) -> bool {
     if samples.is_empty() {
         return false;
     }
-    
+
     // Calculate RMS energy
     let sum_squares: f32 = samples.iter().map(|s| s * s).sum();
     let rms = (sum_squares / samples.len() as f32).sqrt();
-    
+
     rms > threshold
 }
 
@@ -341,22 +352,22 @@ pub fn detect_voice_activity(samples: &[f32], threshold: f32) -> bool {
 pub fn check_wake_word(samples: &[f32], wake_word: WakeWord) -> bool {
     // This is a placeholder - real wake word detection needs ML
     // For now, just detect sustained speech above threshold
-    
+
     let threshold = match wake_word {
         WakeWord::None => return false,
         _ => 0.1,
     };
-    
+
     // Check for speech activity
     let chunk_size = samples.len() / 10;
     let mut speech_chunks = 0;
-    
+
     for chunk in samples.chunks(chunk_size) {
         if detect_voice_activity(chunk, threshold) {
             speech_chunks += 1;
         }
     }
-    
+
     // Wake word detected if several consecutive chunks have speech
     speech_chunks >= 3
 }
@@ -389,36 +400,36 @@ impl VoiceEngine {
             last_command: Arc::new(RwLock::new(None)),
         }
     }
-    
+
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
-    
+
     pub fn get_state(&self) -> ListeningState {
         *self.state.read().unwrap()
     }
-    
+
     pub fn start(&self) {
         if self.running.load(Ordering::Relaxed) {
             return;
         }
-        
+
         self.running.store(true, Ordering::Relaxed);
         *self.state.write().unwrap() = ListeningState::WaitingForWake;
-        
+
         // In a real implementation, this would start audio capture
         // For now, we just set the state
     }
-    
+
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
         *self.state.write().unwrap() = ListeningState::Idle;
     }
-    
+
     /// Simulate receiving transcribed text (from external STT)
     pub fn process_text(&self, text: &str) -> Option<VoiceCommand> {
         let config = self.config.read().unwrap();
-        
+
         // Check for wake word in text
         let wake_detected = match config.wake_word {
             WakeWord::Slain => text.to_lowercase().contains("slain"),
@@ -433,32 +444,33 @@ impl VoiceEngine {
             }
             WakeWord::None => true, // Always active (push-to-talk mode)
         };
-        
+
         if !wake_detected {
             return None;
         }
-        
+
         // Remove wake word from text
-        let command_text = text.to_lowercase()
+        let command_text = text
+            .to_lowercase()
             .replace("slain", "")
             .replace("hey", "")
             .replace("computer", "")
             .trim()
             .to_string();
-        
+
         if command_text.is_empty() {
             // Wake word detected but no command yet
             *self.state.write().unwrap() = ListeningState::Listening;
             return None;
         }
-        
+
         // Parse command
         let command = VoiceCommand::parse(&command_text);
         *self.last_command.write().unwrap() = Some(command.clone());
-        
+
         Some(command)
     }
-    
+
     pub fn get_last_command(&self) -> Option<VoiceCommand> {
         self.last_command.read().unwrap().clone()
     }
@@ -468,33 +480,25 @@ impl VoiceEngine {
 // Global State
 // ============================================================================
 
-static VOICE_CONFIG: Lazy<RwLock<VoiceConfig>> = Lazy::new(|| {
-    RwLock::new(VoiceConfig::default())
-});
+static VOICE_CONFIG: Lazy<RwLock<VoiceConfig>> = Lazy::new(|| RwLock::new(VoiceConfig::default()));
 
-static VOICE_ENGINE: Lazy<VoiceEngine> = Lazy::new(|| {
-    VoiceEngine::new(VoiceConfig::default())
-});
+static VOICE_ENGINE: Lazy<VoiceEngine> = Lazy::new(|| VoiceEngine::new(VoiceConfig::default()));
 
 // ============================================================================
 // Public Rust API
 // ============================================================================
 
-
 pub fn voice_get_config() -> VoiceConfig {
     VOICE_CONFIG.read().unwrap().clone()
 }
-
 
 pub fn voice_set_config(config: VoiceConfig) {
     *VOICE_CONFIG.write().unwrap() = config;
 }
 
-
 pub fn voice_is_enabled() -> bool {
     VOICE_CONFIG.read().unwrap().enabled
 }
-
 
 pub fn voice_toggle(enabled: bool) {
     VOICE_CONFIG.write().unwrap().enabled = enabled;
@@ -505,20 +509,18 @@ pub fn voice_toggle(enabled: bool) {
     }
 }
 
-
 pub fn voice_get_state() -> String {
     format!("{:?}", VOICE_ENGINE.get_state())
 }
 
-
 pub fn voice_process_text(text: String) -> Option<serde_json::Value> {
-    VOICE_ENGINE.process_text(&text)
-        .map(|cmd| serde_json::json!({
+    VOICE_ENGINE.process_text(&text).map(|cmd| {
+        serde_json::json!({
             "command": format!("{:?}", cmd),
             "description": cmd.description(),
-        }))
+        })
+    })
 }
-
 
 pub fn voice_parse_command(text: String) -> serde_json::Value {
     let cmd = VoiceCommand::parse(&text);
@@ -527,7 +529,6 @@ pub fn voice_parse_command(text: String) -> serde_json::Value {
         "description": cmd.description(),
     })
 }
-
 
 pub fn voice_get_help() -> Vec<serde_json::Value> {
     vec![

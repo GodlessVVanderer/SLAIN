@@ -22,10 +22,10 @@
 //!                 └───────────┘
 //! ```
 
+use parking_lot::{Condvar, Mutex, RwLock};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
-use parking_lot::{Mutex, Condvar, RwLock};
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -39,7 +39,7 @@ pub enum PixelFormat {
     YUV420P,
     RGB24,
     RGBA32,
-    P010,  // 10-bit HDR
+    P010, // 10-bit HDR
 }
 
 impl PixelFormat {
@@ -51,7 +51,7 @@ impl PixelFormat {
             Self::NV12 | Self::YUV420P => w * h * 3 / 2,
             Self::RGB24 => w * h * 3,
             Self::RGBA32 => w * h * 4,
-            Self::P010 => w * h * 3,  // 10-bit = 2 bytes Y, 1 byte UV avg
+            Self::P010 => w * h * 3, // 10-bit = 2 bytes Y, 1 byte UV avg
         }
     }
 }
@@ -223,12 +223,12 @@ pub struct QueueConfig {
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
-            max_frames: 32,        // ~1 second at 30fps
-            target_buffer: 8,      // ~250ms pre-buffer
-            min_buffer: 2,         // Emergency level
+            max_frames: 32,           // ~1 second at 30fps
+            target_buffer: 8,         // ~250ms pre-buffer
+            min_buffer: 2,            // Emergency level
             max_pts_diff_us: 100_000, // 100ms max drift
             reorder: true,
-            reorder_depth: 16,     // B-frame reorder buffer
+            reorder_depth: 16, // B-frame reorder buffer
         }
     }
 }
@@ -792,9 +792,8 @@ impl PlaybackController {
     pub fn wait_next_frame(&self) -> Option<Frame> {
         // Calculate time until next frame
         let last_time = *self.last_frame_time.lock();
-        let target_duration = Duration::from_micros(
-            (self.frame_duration_us as f64 / self.speed) as u64
-        );
+        let target_duration =
+            Duration::from_micros((self.frame_duration_us as f64 / self.speed) as u64);
 
         let elapsed = last_time.elapsed();
         if elapsed < target_duration {
