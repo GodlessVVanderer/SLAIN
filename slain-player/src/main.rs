@@ -30,10 +30,15 @@ use slain_core::hw_decode::{
 use slain_core::mkv::{MkvDemuxer, MkvInfo, MkvParser, MkvTrack};
 use slain_core::mp4_demux::mp4::Mp4Demuxer;
 use slain_core::pipeline::{PipelineKind, PipelineManager};
-use slain_core::pixel_convert::{
-    ColorSpace, PixelConverter, PixelFormat as PxFormat, VideoFrame as PxVideoFrame,
+use slain_core::filter_pipeline::{
+    ContainerFormat,
+    FilterRegistry,
+    FilterChainSpec,
+    PipelineProfile,
+    PipelineProfileSelector,
+    ProfileScope,
 };
-use slain_core::ts_demux::{StreamCodec as TsStreamCodec, TsDemuxer};
+use slain_core::h264_utils::{parse_avcc_extradata, avcc_to_annexb, is_annexb};
 
 // ============================================================================
 // Playback State Machine
@@ -272,11 +277,16 @@ impl SlainApp {
         } else {
             None
         };
-
+        
         let default_chain = FilterRegistry::global()
             .read()
             .chain_spec_for(&ContainerFormat::Mp4);
-        let global_profile = PipelineProfile::new("Default", default_pipeline, None, default_chain);
+        let global_profile = PipelineProfile::new(
+            "Default",
+            default_pipeline,
+            None,
+            default_chain,
+        );
 
         Self {
             playback_state: PlaybackState::Idle,
@@ -318,15 +328,13 @@ impl SlainApp {
     }
 
     fn apply_pipeline_profile(&mut self, path: Option<&PathBuf>) {
-        let profile = self
-            .pipeline_profiles
-            .profile_for(path.map(|p| p.as_path()));
+        let profile = self.pipeline_profiles.profile_for(path.map(|p| p.as_path()));
         self.pipeline = profile.pipeline_kind;
         if let Some(ref mut manager) = self.pipeline_manager {
             manager.set_active(profile.pipeline_kind);
         }
     }
-
+    
     /// Check if we're in a playable state
     fn is_playing(&self) -> bool {
         self.playback_state == PlaybackState::Playing
@@ -380,7 +388,7 @@ impl SlainApp {
             .to_lowercase();
 
         self.current_container = ContainerFormat::from_extension(&ext);
-
+        
         match ext.as_str() {
             "mkv" | "webm" => self.open_mkv(&path),
             "mp4" | "m4v" | "mov" => self.open_mp4(&path),
@@ -793,10 +801,7 @@ impl eframe::App for SlainApp {
                             let selected = self.pipeline == p;
                             if ui.radio(selected, format!("{:?}", p)).clicked() {
                                 self.pipeline = p;
-                                let current = self
-                                    .pipeline_profiles
-                                    .profile_for(self.video_path.as_deref())
-                                    .clone();
+                                let current = self.pipeline_profiles.profile_for(self.video_path.as_deref()).clone();
                                 match scope {
                                     ProfileScope::Global => {
                                         self.pipeline_profiles.set_global(PipelineProfile::new(
@@ -848,7 +853,11 @@ impl eframe::App for SlainApp {
                         ContainerFormat::Ts,
                     ] {
                         let chain = registry.read().chain_spec_for(&container);
-                        ui.label(format!("{}: {}", container.label(), chain.display_chain()));
+                        ui.label(format!(
+                            "{}: {}",
+                            container.label(),
+                            chain.display_chain()
+                        ));
                     }
 
                     ui.separator();
@@ -861,9 +870,7 @@ impl eframe::App for SlainApp {
                         }
                     ));
 
-                    let active_profile = self
-                        .pipeline_profiles
-                        .profile_for(self.video_path.as_deref());
+                    let active_profile = self.pipeline_profiles.profile_for(self.video_path.as_deref());
                     ui.label(format!("Profile: {}", active_profile.name));
                     ui.label(format!("Pipeline: {:?}", active_profile.pipeline_kind));
                     ui.label(format!(
@@ -874,8 +881,7 @@ impl eframe::App for SlainApp {
                     if let Some(container) = self.current_container.as_ref() {
                         ui.separator();
                         ui.heading("Current Container Override");
-                        let override_exists =
-                            registry.read().user_override_spec(container).is_some();
+                        let override_exists = registry.read().user_override_spec(container).is_some();
                         ui.label(format!("Container: {}", container.label()));
                         ui.label(if override_exists {
                             "Override: enabled"
@@ -909,7 +915,7 @@ impl eframe::App for SlainApp {
                         }
                     }
                 });
-
+                
                 ui.menu_button("Audio", |ui| {
                     ui.label("Volume:");
                     ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false));
