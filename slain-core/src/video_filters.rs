@@ -34,9 +34,9 @@
 //!              GPU Compute  GPU Compute        GPU Compute
 //! ```
 
-use std::sync::Arc;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 // ============================================================================
@@ -195,7 +195,7 @@ pub struct BlurParams {
 pub enum BlurAlgorithm {
     Box,
     Gaussian,
-    Kawase,  // Fast approximation
+    Kawase, // Fast approximation
 }
 
 impl Default for BlurParams {
@@ -283,9 +283,18 @@ pub enum Filter {
     /// 3D LUT (lookup table path)
     Lut3D { path: String, strength: f32 },
     /// Scale (resize)
-    Scale { width: u32, height: u32, algorithm: ScaleAlgorithm },
+    Scale {
+        width: u32,
+        height: u32,
+        algorithm: ScaleAlgorithm,
+    },
     /// Crop
-    Crop { x: u32, y: u32, width: u32, height: u32 },
+    Crop {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
     /// Letterbox (add black bars)
     Letterbox { aspect_ratio: f32 },
     /// Flip
@@ -324,7 +333,10 @@ impl Filter {
 
     /// Check if filter modifies resolution
     pub fn changes_resolution(&self) -> bool {
-        matches!(self, Self::Scale { .. } | Self::Crop { .. } | Self::Rotate { .. })
+        matches!(
+            self,
+            Self::Scale { .. } | Self::Crop { .. } | Self::Rotate { .. }
+        )
     }
 
     /// Check if filter is a no-op
@@ -335,7 +347,10 @@ impl Filter {
             Self::Blur(p) => p.radius < 0.001,
             Self::Vignette(p) => p.intensity < 0.001,
             Self::Grain(p) => p.intensity < 0.001,
-            Self::Flip { horizontal, vertical } => !horizontal && !vertical,
+            Self::Flip {
+                horizontal,
+                vertical,
+            } => !horizontal && !vertical,
             Self::Rotate { degrees } => degrees.abs() < 0.1,
             _ => false,
         }
@@ -631,133 +646,155 @@ impl FilterProcessor {
 
     /// Compile color correction pipeline
     fn compile_color_pipeline(&mut self) {
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("color_filter"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_COLOR.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("color_filter"),
+                source: wgpu::ShaderSource::Wgsl(SHADER_COLOR.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("color_bind_group_layout"),
-            entries: &[
-                // Input texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Output texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                // Parameters uniform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("color_bind_group_layout"),
+                    entries: &[
+                        // Input texture
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        // Output texture
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::StorageTexture {
+                                access: wgpu::StorageTextureAccess::WriteOnly,
+                                format: wgpu::TextureFormat::Rgba8Unorm,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                            },
+                            count: None,
+                        },
+                        // Parameters uniform
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("color_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("color_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("color_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("color_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        self.pipelines.insert("Color", CompiledPipeline {
-            pipeline,
-            bind_group_layout,
-        });
+        self.pipelines.insert(
+            "Color",
+            CompiledPipeline {
+                pipeline,
+                bind_group_layout,
+            },
+        );
     }
 
     /// Compile sharpening pipeline
     fn compile_sharpen_pipeline(&mut self) {
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("sharpen_filter"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_SHARPEN.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("sharpen_filter"),
+                source: wgpu::ShaderSource::Wgsl(SHADER_SHARPEN.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("sharpen_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("sharpen_bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::StorageTexture {
+                                access: wgpu::StorageTextureAccess::WriteOnly,
+                                format: wgpu::TextureFormat::Rgba8Unorm,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("sharpen_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("sharpen_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("sharpen_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("sharpen_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        self.pipelines.insert("Sharpen", CompiledPipeline {
-            pipeline,
-            bind_group_layout,
-        });
+        self.pipelines.insert(
+            "Sharpen",
+            CompiledPipeline {
+                pipeline,
+                bind_group_layout,
+            },
+        );
     }
 
     /// Resize processing buffers
@@ -830,9 +867,11 @@ impl FilterProcessor {
         );
 
         // Create command encoder
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("filter_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("filter_encoder"),
+            });
 
         // Workgroup size (must match shader)
         let workgroup_size = 16u32;
@@ -855,7 +894,8 @@ impl FilterProcessor {
             // Get the compiled pipeline for this filter type
             if let Some(compiled) = self.pipelines.get(pipeline_name) {
                 // Get the output texture (ping-pong buffer)
-                let output_tex = self.ping_pong[ping_pong_idx].as_ref()
+                let output_tex = self.ping_pong[ping_pong_idx]
+                    .as_ref()
                     .unwrap_or_else(|| self.output_texture.as_ref().unwrap());
 
                 // Create parameter buffer based on filter type
@@ -872,11 +912,12 @@ impl FilterProcessor {
                             params.vibrance,
                             0.0f32, // padding
                         ];
-                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("color_params"),
-                            contents: bytemuck::cast_slice(&data),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        })
+                        self.device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("color_params"),
+                                contents: bytemuck::cast_slice(&data),
+                                usage: wgpu::BufferUsages::UNIFORM,
+                            })
                     }
                     Filter::Sharpen(params) => {
                         let data = [
@@ -885,20 +926,22 @@ impl FilterProcessor {
                             params.threshold,
                             params.algorithm as u32 as f32,
                         ];
-                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("sharpen_params"),
-                            contents: bytemuck::cast_slice(&data),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        })
+                        self.device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("sharpen_params"),
+                                contents: bytemuck::cast_slice(&data),
+                                usage: wgpu::BufferUsages::UNIFORM,
+                            })
                     }
                     _ => {
                         // Default empty params for other filters
                         let data = [0.0f32; 4];
-                        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("filter_params"),
-                            contents: bytemuck::cast_slice(&data),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        })
+                        self.device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("filter_params"),
+                                contents: bytemuck::cast_slice(&data),
+                                usage: wgpu::BufferUsages::UNIFORM,
+                            })
                     }
                 };
 
@@ -928,10 +971,11 @@ impl FilterProcessor {
 
                 // Create compute pass and dispatch
                 {
-                    let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("filter_pass"),
-                        timestamp_writes: None,
-                    });
+                    let mut compute_pass =
+                        encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: Some("filter_pass"),
+                            timestamp_writes: None,
+                        });
 
                     compute_pass.set_pipeline(&compiled.pipeline);
                     compute_pass.set_bind_group(0, &bind_group, &[]);
@@ -1241,16 +1285,15 @@ impl PresetManager {
 
     /// Save presets to JSON
     pub fn save(&self, path: &str) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(&self.presets)
-            .map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&self.presets).map_err(|e| e.to_string())?;
         std::fs::write(path, json).map_err(|e| e.to_string())
     }
 
     /// Load presets from JSON
     pub fn load(&mut self, path: &str) -> Result<(), String> {
         let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let loaded: HashMap<String, FilterChain> = serde_json::from_str(&json)
-            .map_err(|e| e.to_string())?;
+        let loaded: HashMap<String, FilterChain> =
+            serde_json::from_str(&json).map_err(|e| e.to_string())?;
         self.presets.extend(loaded);
         Ok(())
     }

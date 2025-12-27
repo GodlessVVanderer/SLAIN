@@ -2,8 +2,8 @@
 //!
 //! CLSIDs and interfaces for LAV Splitter and LAV Video Decoder.
 
-use windows::core::GUID;
 use std::path::Path;
+use windows::core::GUID;
 
 // ============================================================================
 // LAV Filters CLSIDs
@@ -144,13 +144,13 @@ pub struct LavVideoSettings {
 impl Default for LavVideoSettings {
     fn default() -> Self {
         Self {
-            hw_accel: LavHwAccel::Cuda,  // CUVID
+            hw_accel: LavHwAccel::Cuda, // CUVID
             deint_mode: LavDeintMode::Force,
             deint_field_order: LavDeintFieldOrder::Auto,
-            deint_output_double: true,  // 50/60fps output
+            deint_output_double: true, // 50/60fps output
             sw_deint_mode: LavSwDeintMode::Yadif,
             hw_deint: true,
-            hw_deint_mode: 2,  // Adaptive
+            hw_deint_mode: 2, // Adaptive
             high_quality: true,
             dither_mode: LavDither::Random,
             output_format: LavOutPixFmt::Nv12,
@@ -176,7 +176,7 @@ impl LavVideoSettings {
             deint_output_double: true,
             sw_deint_mode: LavSwDeintMode::Yadif,
             hw_deint: true,
-            hw_deint_mode: 2,  // Adaptive
+            hw_deint_mode: 2, // Adaptive
             high_quality: true,
             dither_mode: LavDither::Random,
             output_format: LavOutPixFmt::Nv12,
@@ -239,8 +239,8 @@ impl Default for LavAudioSettings {
             bitstream: false,
             bitstream_formats: 0,
             mixing: LavAudioMixing::None,
-            sample_format: 0,  // Auto
-            sample_rate: 0,    // Auto
+            sample_format: 0, // Auto
+            sample_rate: 0,   // Auto
             expand_mono: true,
             expand_61: true,
         }
@@ -252,7 +252,8 @@ impl Default for LavAudioSettings {
 // ============================================================================
 
 /// IID for ILAVSplitterSettings
-pub const IID_ILAV_SPLITTER_SETTINGS: GUID = GUID::from_u128(0x774a919d_ea95_4a87_8a1e_f48abf3b2678);
+pub const IID_ILAV_SPLITTER_SETTINGS: GUID =
+    GUID::from_u128(0x774a919d_ea95_4a87_8a1e_f48abf3b2678);
 
 /// Configuration for LAV Splitter
 #[derive(Debug, Clone)]
@@ -303,21 +304,21 @@ pub fn check_lav_installed() -> bool {
         r"C:\Windows\System32\LAVVideo.ax",
         r"C:\Windows\SysWOW64\LAVVideo.ax",
     ];
-    
+
     for path in &paths {
         if Path::new(path).exists() {
             return true;
         }
     }
-    
+
     // Also check registry for CLSID
     #[cfg(windows)]
     {
-        use windows::Win32::System::Registry::{
-            RegOpenKeyExW, RegCloseKey, HKEY_CLASSES_ROOT, KEY_READ,
-        };
         use windows::core::PCWSTR;
-        
+        use windows::Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, HKEY_CLASSES_ROOT, KEY_READ,
+        };
+
         let key_path = format!(
             "CLSID\\{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
             CLSID_LAV_VIDEO.data1,
@@ -332,10 +333,10 @@ pub fn check_lav_installed() -> bool {
             CLSID_LAV_VIDEO.data4[6],
             CLSID_LAV_VIDEO.data4[7],
         );
-        
+
         let wide: Vec<u16> = key_path.encode_utf16().chain(std::iter::once(0)).collect();
         let mut hkey = windows::Win32::System::Registry::HKEY::default();
-        
+
         unsafe {
             if RegOpenKeyExW(
                 HKEY_CLASSES_ROOT,
@@ -343,13 +344,15 @@ pub fn check_lav_installed() -> bool {
                 0,
                 KEY_READ,
                 &mut hkey,
-            ).is_ok() {
+            )
+            .is_ok()
+            {
                 let _ = RegCloseKey(hkey);
                 return true;
             }
         }
     }
-    
+
     false
 }
 
@@ -360,7 +363,7 @@ pub fn get_lav_version() -> Option<String> {
         r"C:\Program Files\LAV Filters\LAVVideo.ax",
         r"C:\Program Files (x86)\LAV Filters\LAVVideo.ax",
     ];
-    
+
     for path in &paths {
         if Path::new(path).exists() {
             // Would need to read version resource from DLL
@@ -368,6 +371,6 @@ pub fn get_lav_version() -> Option<String> {
             return Some("installed".to_string());
         }
     }
-    
+
     None
 }

@@ -47,11 +47,10 @@ rubato.workspace = true
 ringbuf = "0.4"
 
 # Matroska demuxing
-matroska-demuxer = "0.5"
+matroska-demuxer = "0.7"
 
 # Video decoding
 openh264 = "0.6"
-matroska-demuxer = "0.7"
 
 # Regex for parsing
 regex = "1.10"

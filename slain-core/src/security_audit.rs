@@ -172,7 +172,6 @@ pub const FINDINGS: &[Finding] = &[
             (10.x, 172.16-31.x, 192.168.x, 127.x, ::1), add request timeouts.",
         status: FindingStatus::Open,
     },
-
     // -------------------------------------------------------------------------
     // MEDIUM SEVERITY
     // -------------------------------------------------------------------------
@@ -239,7 +238,6 @@ pub const FINDINGS: &[Finding] = &[
             user for confirmation on external protocol invocations.",
         status: FindingStatus::Open,
     },
-
     // -------------------------------------------------------------------------
     // LOW SEVERITY / INFORMATIONAL
     // -------------------------------------------------------------------------
@@ -299,7 +297,10 @@ pub fn count_by_severity(severity: Severity) -> usize {
 
 /// Get count of open findings
 pub fn count_open() -> usize {
-    FINDINGS.iter().filter(|f| f.status == FindingStatus::Open).count()
+    FINDINGS
+        .iter()
+        .filter(|f| f.status == FindingStatus::Open)
+        .count()
 }
 
 /// Get all findings for a specific file

@@ -10,10 +10,10 @@
 //! - Memory bandwidth
 //! - Shader complexity scaling
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
-use serde::{Deserialize, Serialize};
 
 use crate::benchmark::{Rating, TimingStats};
 
@@ -40,86 +40,178 @@ impl GpuBenchmarkResult {
         let mut s = String::new();
 
         s.push_str(&format!("\n"));
-        s.push_str(&format!("╔═══════════════════════════════════════════════════════════════╗\n"));
-        s.push_str(&format!("║            SLAIN GPU Graphics Benchmark                       ║\n"));
-        s.push_str(&format!("╚═══════════════════════════════════════════════════════════════╝\n\n"));
+        s.push_str(&format!(
+            "╔═══════════════════════════════════════════════════════════════╗\n"
+        ));
+        s.push_str(&format!(
+            "║            SLAIN GPU Graphics Benchmark                       ║\n"
+        ));
+        s.push_str(&format!(
+            "╚═══════════════════════════════════════════════════════════════╝\n\n"
+        ));
 
         s.push_str(&format!("  GPU: {}\n", self.gpu_name));
         s.push_str(&format!("  Driver: {}\n\n", self.driver_info));
 
         // Fill Rate
-        s.push_str(&format!("  ┌─────────────────────────────────────────────────────────────┐\n"));
-        s.push_str(&format!("  │  Fill Rate Test                                             │\n"));
-        s.push_str(&format!("  ├─────────────────────────────────────────────────────────────┤\n"));
-        s.push_str(&format!("  │  Pixels/sec:     {:>12.2} GPixels/s                    │\n",
-            self.fill_rate.gpixels_per_sec));
-        s.push_str(&format!("  │  Score:          {:>12}                              │\n",
-            self.fill_rate.score));
-        s.push_str(&format!("  │  Rating:         {:>12}                              │\n",
-            self.fill_rate.rating.as_str()));
-        s.push_str(&format!("  └─────────────────────────────────────────────────────────────┘\n\n"));
+        s.push_str(&format!(
+            "  ┌─────────────────────────────────────────────────────────────┐\n"
+        ));
+        s.push_str(&format!(
+            "  │  Fill Rate Test                                             │\n"
+        ));
+        s.push_str(&format!(
+            "  ├─────────────────────────────────────────────────────────────┤\n"
+        ));
+        s.push_str(&format!(
+            "  │  Pixels/sec:     {:>12.2} GPixels/s                    │\n",
+            self.fill_rate.gpixels_per_sec
+        ));
+        s.push_str(&format!(
+            "  │  Score:          {:>12}                              │\n",
+            self.fill_rate.score
+        ));
+        s.push_str(&format!(
+            "  │  Rating:         {:>12}                              │\n",
+            self.fill_rate.rating.as_str()
+        ));
+        s.push_str(&format!(
+            "  └─────────────────────────────────────────────────────────────┘\n\n"
+        ));
 
         // Texture Sampling
-        s.push_str(&format!("  ┌─────────────────────────────────────────────────────────────┐\n"));
-        s.push_str(&format!("  │  Texture Sampling Test                                      │\n"));
-        s.push_str(&format!("  ├─────────────────────────────────────────────────────────────┤\n"));
-        s.push_str(&format!("  │  Texels/sec:     {:>12.2} GTexels/s                    │\n",
-            self.texture_sample.gtexels_per_sec));
-        s.push_str(&format!("  │  Bilinear:       {:>12.2} GTexels/s                    │\n",
-            self.texture_sample.bilinear_gtexels));
-        s.push_str(&format!("  │  Trilinear:      {:>12.2} GTexels/s                    │\n",
-            self.texture_sample.trilinear_gtexels));
-        s.push_str(&format!("  │  Aniso 16x:      {:>12.2} GTexels/s                    │\n",
-            self.texture_sample.aniso_16x_gtexels));
-        s.push_str(&format!("  │  Score:          {:>12}                              │\n",
-            self.texture_sample.score));
-        s.push_str(&format!("  └─────────────────────────────────────────────────────────────┘\n\n"));
+        s.push_str(&format!(
+            "  ┌─────────────────────────────────────────────────────────────┐\n"
+        ));
+        s.push_str(&format!(
+            "  │  Texture Sampling Test                                      │\n"
+        ));
+        s.push_str(&format!(
+            "  ├─────────────────────────────────────────────────────────────┤\n"
+        ));
+        s.push_str(&format!(
+            "  │  Texels/sec:     {:>12.2} GTexels/s                    │\n",
+            self.texture_sample.gtexels_per_sec
+        ));
+        s.push_str(&format!(
+            "  │  Bilinear:       {:>12.2} GTexels/s                    │\n",
+            self.texture_sample.bilinear_gtexels
+        ));
+        s.push_str(&format!(
+            "  │  Trilinear:      {:>12.2} GTexels/s                    │\n",
+            self.texture_sample.trilinear_gtexels
+        ));
+        s.push_str(&format!(
+            "  │  Aniso 16x:      {:>12.2} GTexels/s                    │\n",
+            self.texture_sample.aniso_16x_gtexels
+        ));
+        s.push_str(&format!(
+            "  │  Score:          {:>12}                              │\n",
+            self.texture_sample.score
+        ));
+        s.push_str(&format!(
+            "  └─────────────────────────────────────────────────────────────┘\n\n"
+        ));
 
         // Compute
-        s.push_str(&format!("  ┌─────────────────────────────────────────────────────────────┐\n"));
-        s.push_str(&format!("  │  Compute Shader Test                                        │\n"));
-        s.push_str(&format!("  ├─────────────────────────────────────────────────────────────┤\n"));
-        s.push_str(&format!("  │  GFLOPS (FP32):  {:>12.1}                              │\n",
-            self.compute.gflops_fp32));
-        s.push_str(&format!("  │  GFLOPS (FP16):  {:>12.1}                              │\n",
-            self.compute.gflops_fp16));
-        s.push_str(&format!("  │  Int Ops/sec:    {:>12.1} GOPS                         │\n",
-            self.compute.giops_int32));
-        s.push_str(&format!("  │  Score:          {:>12}                              │\n",
-            self.compute.score));
-        s.push_str(&format!("  └─────────────────────────────────────────────────────────────┘\n\n"));
+        s.push_str(&format!(
+            "  ┌─────────────────────────────────────────────────────────────┐\n"
+        ));
+        s.push_str(&format!(
+            "  │  Compute Shader Test                                        │\n"
+        ));
+        s.push_str(&format!(
+            "  ├─────────────────────────────────────────────────────────────┤\n"
+        ));
+        s.push_str(&format!(
+            "  │  GFLOPS (FP32):  {:>12.1}                              │\n",
+            self.compute.gflops_fp32
+        ));
+        s.push_str(&format!(
+            "  │  GFLOPS (FP16):  {:>12.1}                              │\n",
+            self.compute.gflops_fp16
+        ));
+        s.push_str(&format!(
+            "  │  Int Ops/sec:    {:>12.1} GOPS                         │\n",
+            self.compute.giops_int32
+        ));
+        s.push_str(&format!(
+            "  │  Score:          {:>12}                              │\n",
+            self.compute.score
+        ));
+        s.push_str(&format!(
+            "  └─────────────────────────────────────────────────────────────┘\n\n"
+        ));
 
         // Triangles
-        s.push_str(&format!("  ┌─────────────────────────────────────────────────────────────┐\n"));
-        s.push_str(&format!("  │  Triangle Throughput Test                                   │\n"));
-        s.push_str(&format!("  ├─────────────────────────────────────────────────────────────┤\n"));
-        s.push_str(&format!("  │  Triangles/sec:  {:>12.1} MTris/s                      │\n",
-            self.triangle.mtris_per_sec));
-        s.push_str(&format!("  │  Vertices/sec:   {:>12.1} MVerts/s                     │\n",
-            self.triangle.mverts_per_sec));
-        s.push_str(&format!("  │  Score:          {:>12}                              │\n",
-            self.triangle.score));
-        s.push_str(&format!("  └─────────────────────────────────────────────────────────────┘\n\n"));
+        s.push_str(&format!(
+            "  ┌─────────────────────────────────────────────────────────────┐\n"
+        ));
+        s.push_str(&format!(
+            "  │  Triangle Throughput Test                                   │\n"
+        ));
+        s.push_str(&format!(
+            "  ├─────────────────────────────────────────────────────────────┤\n"
+        ));
+        s.push_str(&format!(
+            "  │  Triangles/sec:  {:>12.1} MTris/s                      │\n",
+            self.triangle.mtris_per_sec
+        ));
+        s.push_str(&format!(
+            "  │  Vertices/sec:   {:>12.1} MVerts/s                     │\n",
+            self.triangle.mverts_per_sec
+        ));
+        s.push_str(&format!(
+            "  │  Score:          {:>12}                              │\n",
+            self.triangle.score
+        ));
+        s.push_str(&format!(
+            "  └─────────────────────────────────────────────────────────────┘\n\n"
+        ));
 
         // Memory
-        s.push_str(&format!("  ┌─────────────────────────────────────────────────────────────┐\n"));
-        s.push_str(&format!("  │  Memory Bandwidth Test                                      │\n"));
-        s.push_str(&format!("  ├─────────────────────────────────────────────────────────────┤\n"));
-        s.push_str(&format!("  │  Read:           {:>12.1} GB/s                         │\n",
-            self.memory.read_gbps));
-        s.push_str(&format!("  │  Write:          {:>12.1} GB/s                         │\n",
-            self.memory.write_gbps));
-        s.push_str(&format!("  │  Copy:           {:>12.1} GB/s                         │\n",
-            self.memory.copy_gbps));
-        s.push_str(&format!("  │  Score:          {:>12}                              │\n",
-            self.memory.score));
-        s.push_str(&format!("  └─────────────────────────────────────────────────────────────┘\n\n"));
+        s.push_str(&format!(
+            "  ┌─────────────────────────────────────────────────────────────┐\n"
+        ));
+        s.push_str(&format!(
+            "  │  Memory Bandwidth Test                                      │\n"
+        ));
+        s.push_str(&format!(
+            "  ├─────────────────────────────────────────────────────────────┤\n"
+        ));
+        s.push_str(&format!(
+            "  │  Read:           {:>12.1} GB/s                         │\n",
+            self.memory.read_gbps
+        ));
+        s.push_str(&format!(
+            "  │  Write:          {:>12.1} GB/s                         │\n",
+            self.memory.write_gbps
+        ));
+        s.push_str(&format!(
+            "  │  Copy:           {:>12.1} GB/s                         │\n",
+            self.memory.copy_gbps
+        ));
+        s.push_str(&format!(
+            "  │  Score:          {:>12}                              │\n",
+            self.memory.score
+        ));
+        s.push_str(&format!(
+            "  └─────────────────────────────────────────────────────────────┘\n\n"
+        ));
 
         // Overall
-        s.push_str(&format!("  ═══════════════════════════════════════════════════════════════\n"));
-        s.push_str(&format!("   OVERALL SCORE:  {:>8}  {}  {}\n",
-            self.overall_score, self.overall_rating.emoji(), self.overall_rating.as_str()));
-        s.push_str(&format!("  ═══════════════════════════════════════════════════════════════\n"));
+        s.push_str(&format!(
+            "  ═══════════════════════════════════════════════════════════════\n"
+        ));
+        s.push_str(&format!(
+            "   OVERALL SCORE:  {:>8}  {}  {}\n",
+            self.overall_score,
+            self.overall_rating.emoji(),
+            self.overall_rating.as_str()
+        ));
+        s.push_str(&format!(
+            "  ═══════════════════════════════════════════════════════════════\n"
+        ));
 
         s
     }
@@ -301,8 +393,12 @@ impl GpuBenchmarker {
         let triangle = self.benchmark_triangles();
         let memory = self.benchmark_memory();
 
-        let overall_score = (fill_rate.score + texture_sample.score +
-            compute.score + triangle.score + memory.score) / 5;
+        let overall_score = (fill_rate.score
+            + texture_sample.score
+            + compute.score
+            + triangle.score
+            + memory.score)
+            / 5;
 
         let overall_rating = if overall_score >= 15000 {
             Rating::Excellent
@@ -337,7 +433,11 @@ impl GpuBenchmarker {
         // Create output texture
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("fill_rate_texture"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -349,39 +449,47 @@ impl GpuBenchmarker {
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Create pipeline
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("fill_rate_shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_FILL_RATE.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("fill_rate_shader"),
+                source: wgpu::ShaderSource::Wgsl(SHADER_FILL_RATE.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
-            }],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    }],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("fill_rate_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("fill_rate_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -454,7 +562,11 @@ impl GpuBenchmarker {
         // Create test texture
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("bench_texture"),
-            size: wgpu::Extent3d { width: tex_size, height: tex_size, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: tex_size,
+                height: tex_size,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -481,65 +593,82 @@ impl GpuBenchmarker {
         });
 
         // Pipeline
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(SHADER_TEXTURE_BENCH.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(SHADER_TEXTURE_BENCH.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&texture_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -597,11 +726,13 @@ impl GpuBenchmarker {
 
         // Create buffers
         let input_data: Vec<f32> = (0..elements).map(|i| i as f32 * 0.001).collect();
-        let input_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&input_data),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let input_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&input_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -611,58 +742,72 @@ impl GpuBenchmarker {
         });
 
         // Pipeline
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(SHADER_COMPUTE_BENCH.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(SHADER_COMPUTE_BENCH.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: input_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -728,11 +873,13 @@ impl GpuBenchmarker {
             .map(|i| (i as f32) * 0.0001)
             .collect();
 
-        let input_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&vertex_data),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let input_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&vertex_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -741,58 +888,72 @@ impl GpuBenchmarker {
             mapped_at_creation: false,
         });
 
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(SHADER_MEMORY_BENCH.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(SHADER_MEMORY_BENCH.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: input_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -846,58 +1007,72 @@ impl GpuBenchmarker {
             mapped_at_creation: false,
         });
 
-        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(SHADER_MEMORY_BENCH.into()),
-        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(SHADER_MEMORY_BENCH.into()),
+            });
 
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: input_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
