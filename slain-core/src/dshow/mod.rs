@@ -4,7 +4,7 @@
 //! for hardware-accelerated video decoding with CUVID.
 //!
 //! # Status
-//! 
+//!
 //! This module provides the interface for LAV Filters integration.
 //! Full DirectShow COM implementation is complex and not yet complete.
 //!
@@ -14,14 +14,14 @@
 //! - `slain_core::nvdec` - Direct NVDEC API (NVIDIA)
 //! - `slain_core::hw_decode` - Unified hardware decoder interface
 
+mod graph;
+mod interfaces;
 mod lav;
 mod sample_grabber;
-mod interfaces;
-mod graph;
 
-pub use lav::*;
-pub use sample_grabber::{CapturedFrame, FrameBuffer, SampleGrabberConfig, GrabberMode};
 pub use graph::*;
+pub use lav::*;
+pub use sample_grabber::{CapturedFrame, FrameBuffer, GrabberMode, SampleGrabberConfig};
 
 /// Check if LAV Filters are installed
 pub fn lav_filters_installed() -> bool {

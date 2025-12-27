@@ -3,8 +3,8 @@
 //! Uploads video frames to GPU textures and renders to screen.
 //! Supports NV12, YUV420, and RGB formats.
 
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 // ============================================================================
 // Vertex and Shader
@@ -18,10 +18,22 @@ struct Vertex {
 }
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [-1.0, -1.0], tex_coords: [0.0, 1.0] },
-    Vertex { position: [ 1.0, -1.0], tex_coords: [1.0, 1.0] },
-    Vertex { position: [ 1.0,  1.0], tex_coords: [1.0, 0.0] },
-    Vertex { position: [-1.0,  1.0], tex_coords: [0.0, 0.0] },
+    Vertex {
+        position: [-1.0, -1.0],
+        tex_coords: [0.0, 1.0],
+    },
+    Vertex {
+        position: [1.0, -1.0],
+        tex_coords: [1.0, 1.0],
+    },
+    Vertex {
+        position: [1.0, 1.0],
+        tex_coords: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-1.0, 1.0],
+        tex_coords: [0.0, 0.0],
+    },
 ];
 
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
@@ -128,26 +140,26 @@ pub struct GpuRenderer {
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
-    
+
     // RGB pipeline
     rgb_pipeline: wgpu::RenderPipeline,
     rgb_bind_group_layout: wgpu::BindGroupLayout,
-    
+
     // NV12 pipeline
     nv12_pipeline: wgpu::RenderPipeline,
     nv12_bind_group_layout: wgpu::BindGroupLayout,
-    
+
     // Geometry
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    
+
     // Current texture
     current_bind_group: Option<wgpu::BindGroup>,
     current_format: FrameFormat,
-    
+
     // Sampler
     sampler: wgpu::Sampler,
-    
+
     // Dimensions
     width: u32,
     height: u32,
@@ -157,15 +169,16 @@ impl GpuRenderer {
     /// Create renderer for a window
     pub async fn new(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let size = window.inner_size();
-        
+
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        
-        let surface = instance.create_surface(window.clone())
+
+        let surface = instance
+            .create_surface(window.clone())
             .map_err(|e| format!("Surface creation failed: {}", e))?;
-        
+
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -174,7 +187,7 @@ impl GpuRenderer {
             })
             .await
             .ok_or("No suitable GPU adapter")?;
-        
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -187,13 +200,15 @@ impl GpuRenderer {
             )
             .await
             .map_err(|e| format!("Device request failed: {}", e))?;
-        
+
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
+        let surface_format = surface_caps
+            .formats
+            .iter()
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
-        
+
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -205,7 +220,7 @@ impl GpuRenderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &surface_config);
-        
+
         // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -216,63 +231,65 @@ impl GpuRenderer {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-        
+
         // RGB bind group layout
-        let rgb_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let rgb_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("rgb_bind_group_layout"),
-        });
-        
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("rgb_bind_group_layout"),
+            });
+
         // NV12 bind group layout
-        let nv12_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let nv12_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("nv12_bind_group_layout"),
-        });
-        
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("nv12_bind_group_layout"),
+            });
+
         // Vertex buffer layout
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -290,19 +307,19 @@ impl GpuRenderer {
                 },
             ],
         };
-        
+
         // RGB pipeline
         let rgb_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rgb_shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_RGB.into()),
         });
-        
+
         let rgb_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rgb_pipeline_layout"),
             bind_group_layouts: &[&rgb_bind_group_layout],
             push_constant_ranges: &[],
         });
-        
+
         let rgb_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("rgb_pipeline"),
             layout: Some(&rgb_pipeline_layout),
@@ -340,19 +357,19 @@ impl GpuRenderer {
             multiview: None,
             cache: None,
         });
-        
+
         // NV12 pipeline
         let nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("nv12_shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_NV12.into()),
         });
-        
+
         let nv12_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("nv12_pipeline_layout"),
             bind_group_layouts: &[&nv12_bind_group_layout],
             push_constant_ranges: &[],
         });
-        
+
         let nv12_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("nv12_pipeline"),
             layout: Some(&nv12_pipeline_layout),
@@ -390,7 +407,7 @@ impl GpuRenderer {
             multiview: None,
             cache: None,
         });
-        
+
         // Vertex buffer
         use wgpu::util::DeviceExt;
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -398,14 +415,14 @@ impl GpuRenderer {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        
+
         // Index buffer
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("index_buffer"),
             contents: bytemuck::cast_slice(INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
-        
+
         Ok(Self {
             device,
             queue,
@@ -424,7 +441,7 @@ impl GpuRenderer {
             height: size.height,
         })
     }
-    
+
     /// Resize surface
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
@@ -435,7 +452,7 @@ impl GpuRenderer {
             self.surface.configure(&self.device, &self.surface_config);
         }
     }
-    
+
     /// Upload frame to GPU
     pub fn upload_frame(&mut self, frame: &VideoFrame) {
         match frame.format {
@@ -451,14 +468,14 @@ impl GpuRenderer {
             }
         }
     }
-    
+
     fn upload_rgb(&mut self, frame: &VideoFrame) {
         let format = if frame.format == FrameFormat::RGBA32 {
             wgpu::TextureFormat::Rgba8UnormSrgb
         } else {
             wgpu::TextureFormat::Rgba8UnormSrgb
         };
-        
+
         // Convert RGB24 to RGBA32 if needed
         let data = if frame.format == FrameFormat::RGB24 {
             let mut rgba = Vec::with_capacity(frame.width as usize * frame.height as usize * 4);
@@ -472,7 +489,7 @@ impl GpuRenderer {
         } else {
             frame.data.clone()
         };
-        
+
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("video_texture"),
             size: wgpu::Extent3d {
@@ -487,7 +504,7 @@ impl GpuRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &texture,
@@ -507,9 +524,9 @@ impl GpuRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        
+
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         self.current_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rgb_bind_group"),
             layout: &self.rgb_bind_group_layout,
@@ -524,15 +541,15 @@ impl GpuRenderer {
                 },
             ],
         }));
-        
+
         self.current_format = FrameFormat::RGB24;
     }
-    
+
     fn upload_nv12(&mut self, frame: &VideoFrame) {
         let y_size = (frame.width * frame.height) as usize;
         let uv_width = frame.width / 2;
         let uv_height = frame.height / 2;
-        
+
         // Y plane texture
         let y_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("y_texture"),
@@ -548,7 +565,7 @@ impl GpuRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &y_texture,
@@ -568,7 +585,7 @@ impl GpuRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        
+
         // UV plane texture (interleaved)
         let uv_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("uv_texture"),
@@ -584,7 +601,7 @@ impl GpuRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &uv_texture,
@@ -604,10 +621,10 @@ impl GpuRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        
+
         let y_view = y_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let uv_view = uv_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         self.current_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("nv12_bind_group"),
             layout: &self.nv12_bind_group_layout,
@@ -626,19 +643,23 @@ impl GpuRenderer {
                 },
             ],
         }));
-        
+
         self.current_format = FrameFormat::NV12;
     }
-    
+
     /// Render current frame to screen
     pub fn render(&self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("render_encoder"),
-        });
-        
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render_pass"),
@@ -654,24 +675,25 @@ impl GpuRenderer {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            
+
             if let Some(bind_group) = &self.current_bind_group {
                 let pipeline = match self.current_format {
                     FrameFormat::NV12 => &self.nv12_pipeline,
                     _ => &self.rgb_pipeline,
                 };
-                
+
                 render_pass.set_pipeline(pipeline);
                 render_pass.set_bind_group(0, bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass
+                    .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..6, 0, 0..1);
             }
         }
-        
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        
+
         Ok(())
     }
 }

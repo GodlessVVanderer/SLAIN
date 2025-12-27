@@ -2,9 +2,9 @@
 //!
 //! Implements ISampleGrabberCB to receive decoded video frames.
 
-use std::sync::Arc;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use windows::core::GUID;
 
@@ -59,60 +59,65 @@ impl FrameBuffer {
             height: std::sync::atomic::AtomicU32::new(0),
         })
     }
-    
+
     /// Push a new frame to the buffer
     pub fn push(&self, frame: CapturedFrame) {
         let mut queue = self.frames.lock();
-        
+
         // Update dimensions
-        self.width.store(frame.width, std::sync::atomic::Ordering::Relaxed);
-        self.height.store(frame.height, std::sync::atomic::Ordering::Relaxed);
-        
+        self.width
+            .store(frame.width, std::sync::atomic::Ordering::Relaxed);
+        self.height
+            .store(frame.height, std::sync::atomic::Ordering::Relaxed);
+
         // Drop oldest frame if buffer is full
         if queue.len() >= self.max_size {
             queue.pop_front();
-            self.dropped_frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.dropped_frames
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        
+
         queue.push_back(frame);
-        self.total_frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_frames
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
-    
+
     /// Pop a frame from the buffer
     pub fn pop(&self) -> Option<CapturedFrame> {
         self.frames.lock().pop_front()
     }
-    
+
     /// Peek at the next frame without removing it
     pub fn peek(&self) -> Option<CapturedFrame> {
         self.frames.lock().front().cloned()
     }
-    
+
     /// Get number of frames in buffer
     pub fn len(&self) -> usize {
         self.frames.lock().len()
     }
-    
+
     /// Check if buffer is empty
     pub fn is_empty(&self) -> bool {
         self.frames.lock().is_empty()
     }
-    
+
     /// Clear all frames
     pub fn clear(&self) {
         self.frames.lock().clear();
     }
-    
+
     /// Get total frames captured
     pub fn total_frames(&self) -> u64 {
         self.total_frames.load(std::sync::atomic::Ordering::Relaxed)
     }
-    
+
     /// Get dropped frames count
     pub fn dropped_frames(&self) -> u64 {
-        self.dropped_frames.load(std::sync::atomic::Ordering::Relaxed)
+        self.dropped_frames
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
-    
+
     /// Get current video dimensions
     pub fn dimensions(&self) -> (u32, u32) {
         (
@@ -186,7 +191,7 @@ impl SampleGrabberCallback {
             frame_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
-    
+
     /// Set media type info
     pub fn set_media_type(&mut self, width: u32, height: u32, stride: i32, format: GUID) {
         self.width = width;
@@ -194,11 +199,13 @@ impl SampleGrabberCallback {
         self.stride = stride;
         self.format = format;
     }
-    
+
     /// Process a sample (called from DirectShow thread)
     pub fn on_sample(&self, sample_time: f64, data: &[u8]) {
-        let frame_num = self.frame_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        let frame_num = self
+            .frame_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         // Convert data based on format
         let frame_data = if self.format == MEDIASUBTYPE_RGB24 {
             // RGB24 - might need to flip vertically
@@ -215,34 +222,34 @@ impl SampleGrabberCallback {
             // Unknown format, just copy
             data.to_vec()
         };
-        
+
         let frame = CapturedFrame {
             data: frame_data,
             width: self.width,
             height: self.height,
             sample_time: (sample_time * 10_000_000.0) as i64,
             frame_number: frame_num,
-            keyframe: frame_num == 0,  // Assume first frame is keyframe
+            keyframe: frame_num == 0, // Assume first frame is keyframe
         };
-        
+
         self.buffer.push(frame);
     }
-    
+
     /// Flip RGB24 data vertically (for bottom-up DIB)
     fn flip_vertical_rgb24(&self, data: &[u8]) -> Vec<u8> {
         let row_size = (self.width * 3) as usize;
         let height = self.height as usize;
         let mut flipped = vec![0u8; data.len()];
-        
+
         for y in 0..height {
             let src_row = &data[y * row_size..(y + 1) * row_size];
             let dst_row = &mut flipped[(height - 1 - y) * row_size..(height - y) * row_size];
             dst_row.copy_from_slice(src_row);
         }
-        
+
         flipped
     }
-    
+
     /// Get frame buffer
     pub fn buffer(&self) -> &Arc<FrameBuffer> {
         &self.buffer

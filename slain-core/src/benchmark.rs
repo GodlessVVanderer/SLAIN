@@ -10,9 +10,9 @@
 //! - JSON report export
 //! - Comparison utilities
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Benchmark Results
@@ -69,12 +69,14 @@ impl TimingStats {
         };
 
         // Standard deviation
-        let variance: f64 = times.iter()
+        let variance: f64 = times
+            .iter()
             .map(|&t| {
                 let diff = t as f64 - mean;
                 diff * diff
             })
-            .sum::<f64>() / count as f64;
+            .sum::<f64>()
+            / count as f64;
         let std_dev = variance.sqrt();
 
         // Percentiles
@@ -196,9 +198,17 @@ impl BenchmarkResult {
     /// Generate human-readable report
     pub fn report(&self) -> String {
         let mut s = String::new();
-        s.push_str(&format!("═══════════════════════════════════════════════════════════\n"));
-        s.push_str(&format!("  {} Benchmark: {}\n", self.rating.emoji(), self.name));
-        s.push_str(&format!("═══════════════════════════════════════════════════════════\n\n"));
+        s.push_str(&format!(
+            "═══════════════════════════════════════════════════════════\n"
+        ));
+        s.push_str(&format!(
+            "  {} Benchmark: {}\n",
+            self.rating.emoji(),
+            self.name
+        ));
+        s.push_str(&format!(
+            "═══════════════════════════════════════════════════════════\n\n"
+        ));
 
         s.push_str(&format!("  Decoder:     {}\n", self.decoder));
         s.push_str(&format!("  Codec:       {}\n", self.codec));
@@ -206,33 +216,76 @@ impl BenchmarkResult {
         s.push_str(&format!("  Target FPS:  {:.1}\n\n", self.target_fps));
 
         s.push_str(&format!("  Results:\n"));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────\n"));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────\n"
+        ));
         s.push_str(&format!("  Frames decoded:     {:>10}\n", self.stats.count));
         s.push_str(&format!("  Average FPS:        {:>10.1}\n", self.stats.fps));
-        s.push_str(&format!("  Median decode:      {:>10.2} ms\n", self.stats.median_us as f64 / 1000.0));
-        s.push_str(&format!("  Mean decode:        {:>10.2} ms\n", self.stats.mean_us / 1000.0));
-        s.push_str(&format!("  Min decode:         {:>10.2} ms\n", self.stats.min_us as f64 / 1000.0));
-        s.push_str(&format!("  Max decode:         {:>10.2} ms\n", self.stats.max_us as f64 / 1000.0));
-        s.push_str(&format!("  Std deviation:      {:>10.2} ms\n", self.stats.std_dev_us / 1000.0));
+        s.push_str(&format!(
+            "  Median decode:      {:>10.2} ms\n",
+            self.stats.median_us as f64 / 1000.0
+        ));
+        s.push_str(&format!(
+            "  Mean decode:        {:>10.2} ms\n",
+            self.stats.mean_us / 1000.0
+        ));
+        s.push_str(&format!(
+            "  Min decode:         {:>10.2} ms\n",
+            self.stats.min_us as f64 / 1000.0
+        ));
+        s.push_str(&format!(
+            "  Max decode:         {:>10.2} ms\n",
+            self.stats.max_us as f64 / 1000.0
+        ));
+        s.push_str(&format!(
+            "  Std deviation:      {:>10.2} ms\n",
+            self.stats.std_dev_us / 1000.0
+        ));
         s.push_str(&format!("\n"));
         s.push_str(&format!("  Percentiles:\n"));
-        s.push_str(&format!("    P50:              {:>10.2} ms\n", self.stats.p50_us / 1000.0));
-        s.push_str(&format!("    P90:              {:>10.2} ms\n", self.stats.p90_us / 1000.0));
-        s.push_str(&format!("    P95:              {:>10.2} ms\n", self.stats.p95_us / 1000.0));
-        s.push_str(&format!("    P99:              {:>10.2} ms\n", self.stats.p99_us / 1000.0));
+        s.push_str(&format!(
+            "    P50:              {:>10.2} ms\n",
+            self.stats.p50_us / 1000.0
+        ));
+        s.push_str(&format!(
+            "    P90:              {:>10.2} ms\n",
+            self.stats.p90_us / 1000.0
+        ));
+        s.push_str(&format!(
+            "    P95:              {:>10.2} ms\n",
+            self.stats.p95_us / 1000.0
+        ));
+        s.push_str(&format!(
+            "    P99:              {:>10.2} ms\n",
+            self.stats.p99_us / 1000.0
+        ));
         s.push_str(&format!("\n"));
-        s.push_str(&format!("  Rating: {} ({})\n", self.rating.emoji(), self.rating.as_str()));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────\n"));
+        s.push_str(&format!(
+            "  Rating: {} ({})\n",
+            self.rating.emoji(),
+            self.rating.as_str()
+        ));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────\n"
+        ));
 
         if let Some(ref kf) = self.keyframe_stats {
-            s.push_str(&format!("\n  Keyframe decode:    {:>10.2} ms (avg)\n", kf.mean_us / 1000.0));
+            s.push_str(&format!(
+                "\n  Keyframe decode:    {:>10.2} ms (avg)\n",
+                kf.mean_us / 1000.0
+            ));
         }
         if let Some(ref inf) = self.interframe_stats {
-            s.push_str(&format!("  Interframe decode:  {:>10.2} ms (avg)\n", inf.mean_us / 1000.0));
+            s.push_str(&format!(
+                "  Interframe decode:  {:>10.2} ms (avg)\n",
+                inf.mean_us / 1000.0
+            ));
         }
 
-        s.push_str(&format!("\n  System: {} ({} cores)\n",
-            self.system_info.cpu_name, self.system_info.cpu_cores));
+        s.push_str(&format!(
+            "\n  System: {} ({} cores)\n",
+            self.system_info.cpu_name, self.system_info.cpu_cores
+        ));
         if let Some(ref gpu) = self.system_info.gpu_name {
             s.push_str(&format!("  GPU:    {}\n", gpu));
         }
@@ -372,8 +425,18 @@ impl Benchmarker {
         let stats = TimingStats::from_timings(&self.timings);
 
         // Separate keyframe and interframe stats
-        let keyframes: Vec<_> = self.timings.iter().filter(|t| t.is_keyframe).cloned().collect();
-        let interframes: Vec<_> = self.timings.iter().filter(|t| !t.is_keyframe).cloned().collect();
+        let keyframes: Vec<_> = self
+            .timings
+            .iter()
+            .filter(|t| t.is_keyframe)
+            .cloned()
+            .collect();
+        let interframes: Vec<_> = self
+            .timings
+            .iter()
+            .filter(|t| !t.is_keyframe)
+            .cloned()
+            .collect();
 
         let keyframe_stats = if !keyframes.is_empty() {
             Some(TimingStats::from_timings(&keyframes))
@@ -421,8 +484,10 @@ fn chrono_lite_timestamp() -> String {
     let hours = (secs % 86400) / 3600;
     let minutes = (secs % 3600) / 60;
     let seconds = secs % 60;
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        years, months, day, hours, minutes, seconds)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        years, months, day, hours, minutes, seconds
+    )
 }
 
 // ============================================================================
@@ -438,7 +503,11 @@ pub struct SyntheticH264 {
 
 impl SyntheticH264 {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, frame_num: 0 }
+        Self {
+            width,
+            height,
+            frame_num: 0,
+        }
     }
 
     /// Generate a synthetic SPS NAL unit
@@ -526,10 +595,10 @@ impl SyntheticH264 {
 /// Standard benchmark presets
 #[derive(Debug, Clone, Copy)]
 pub enum BenchmarkPreset {
-    Quick,      // 100 frames, fast results
-    Standard,   // 300 frames, balanced
-    Thorough,   // 1000 frames, accurate
-    Stress,     // 3000 frames, stress test
+    Quick,    // 100 frames, fast results
+    Standard, // 300 frames, balanced
+    Thorough, // 1000 frames, accurate
+    Stress,   // 3000 frames, stress test
 }
 
 impl BenchmarkPreset {
@@ -545,7 +614,13 @@ impl BenchmarkPreset {
             name: name.to_string(),
             warmup_frames: warmup,
             test_frames: test,
-            target_fps: if height >= 2160 { 60.0 } else if height >= 1080 { 30.0 } else { 24.0 },
+            target_fps: if height >= 2160 {
+                60.0
+            } else if height >= 1080 {
+                30.0
+            } else {
+                24.0
+            },
             codec: codec.to_string(),
             width,
             height,
@@ -571,8 +646,11 @@ pub struct BenchmarkComparison {
 impl BenchmarkComparison {
     pub fn compare(baseline: BenchmarkResult, comparison: BenchmarkResult) -> Self {
         let fps_diff = ((comparison.stats.fps - baseline.stats.fps) / baseline.stats.fps) * 100.0;
-        let median_diff = ((baseline.stats.median_us - comparison.stats.median_us) / baseline.stats.median_us) * 100.0;
-        let p99_diff = ((baseline.stats.p99_us - comparison.stats.p99_us) / baseline.stats.p99_us) * 100.0;
+        let median_diff = ((baseline.stats.median_us - comparison.stats.median_us)
+            / baseline.stats.median_us)
+            * 100.0;
+        let p99_diff =
+            ((baseline.stats.p99_us - comparison.stats.p99_us) / baseline.stats.p99_us) * 100.0;
 
         let winner = if comparison.stats.fps > baseline.stats.fps {
             comparison.decoder.clone()
@@ -592,27 +670,57 @@ impl BenchmarkComparison {
 
     pub fn report(&self) -> String {
         let mut s = String::new();
-        s.push_str(&format!("\n═══════════════════════════════════════════════════════════\n"));
+        s.push_str(&format!(
+            "\n═══════════════════════════════════════════════════════════\n"
+        ));
         s.push_str(&format!("  Benchmark Comparison\n"));
-        s.push_str(&format!("═══════════════════════════════════════════════════════════\n\n"));
+        s.push_str(&format!(
+            "═══════════════════════════════════════════════════════════\n\n"
+        ));
 
-        s.push_str(&format!("  {} vs {}\n\n", self.baseline.decoder, self.comparison.decoder));
+        s.push_str(&format!(
+            "  {} vs {}\n\n",
+            self.baseline.decoder, self.comparison.decoder
+        ));
 
-        s.push_str(&format!("                    {:>15} {:>15}\n",
-            self.baseline.decoder, self.comparison.decoder));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────\n"));
-        s.push_str(&format!("  FPS:              {:>15.1} {:>15.1}\n",
-            self.baseline.stats.fps, self.comparison.stats.fps));
-        s.push_str(&format!("  Median (ms):      {:>15.2} {:>15.2}\n",
-            self.baseline.stats.median_us / 1000.0, self.comparison.stats.median_us / 1000.0));
-        s.push_str(&format!("  P99 (ms):         {:>15.2} {:>15.2}\n",
-            self.baseline.stats.p99_us / 1000.0, self.comparison.stats.p99_us / 1000.0));
+        s.push_str(&format!(
+            "                    {:>15} {:>15}\n",
+            self.baseline.decoder, self.comparison.decoder
+        ));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────\n"
+        ));
+        s.push_str(&format!(
+            "  FPS:              {:>15.1} {:>15.1}\n",
+            self.baseline.stats.fps, self.comparison.stats.fps
+        ));
+        s.push_str(&format!(
+            "  Median (ms):      {:>15.2} {:>15.2}\n",
+            self.baseline.stats.median_us / 1000.0,
+            self.comparison.stats.median_us / 1000.0
+        ));
+        s.push_str(&format!(
+            "  P99 (ms):         {:>15.2} {:>15.2}\n",
+            self.baseline.stats.p99_us / 1000.0,
+            self.comparison.stats.p99_us / 1000.0
+        ));
 
         s.push_str(&format!("\n  Difference:\n"));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────\n"));
-        s.push_str(&format!("  FPS:              {:>+.1}%\n", self.fps_diff_percent));
-        s.push_str(&format!("  Median:           {:>+.1}% faster\n", self.median_diff_percent));
-        s.push_str(&format!("  P99:              {:>+.1}% faster\n", self.p99_diff_percent));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────\n"
+        ));
+        s.push_str(&format!(
+            "  FPS:              {:>+.1}%\n",
+            self.fps_diff_percent
+        ));
+        s.push_str(&format!(
+            "  Median:           {:>+.1}% faster\n",
+            self.median_diff_percent
+        ));
+        s.push_str(&format!(
+            "  P99:              {:>+.1}% faster\n",
+            self.p99_diff_percent
+        ));
 
         s.push_str(&format!("\n  Winner: {} 🏆\n", self.winner));
 
@@ -631,7 +739,9 @@ pub struct BenchmarkSuite {
 
 impl BenchmarkSuite {
     pub fn new() -> Self {
-        Self { results: Vec::new() }
+        Self {
+            results: Vec::new(),
+        }
     }
 
     pub fn add_result(&mut self, result: BenchmarkResult) {
@@ -647,31 +757,50 @@ impl BenchmarkSuite {
         let mut s = String::new();
 
         s.push_str(&format!("\n"));
-        s.push_str(&format!("╔═══════════════════════════════════════════════════════════╗\n"));
-        s.push_str(&format!("║          SLAIN Decoder Benchmark Suite                    ║\n"));
-        s.push_str(&format!("╚═══════════════════════════════════════════════════════════╝\n\n"));
+        s.push_str(&format!(
+            "╔═══════════════════════════════════════════════════════════╗\n"
+        ));
+        s.push_str(&format!(
+            "║          SLAIN Decoder Benchmark Suite                    ║\n"
+        ));
+        s.push_str(&format!(
+            "╚═══════════════════════════════════════════════════════════╝\n\n"
+        ));
 
         // Summary table
         s.push_str(&format!("  Summary:\n"));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────────\n"));
-        s.push_str(&format!("  {:20} {:>10} {:>12} {:>10} {:>8}\n",
-            "Decoder", "FPS", "Median (ms)", "P99 (ms)", "Rating"));
-        s.push_str(&format!("  ─────────────────────────────────────────────────────────────\n"));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────────\n"
+        ));
+        s.push_str(&format!(
+            "  {:20} {:>10} {:>12} {:>10} {:>8}\n",
+            "Decoder", "FPS", "Median (ms)", "P99 (ms)", "Rating"
+        ));
+        s.push_str(&format!(
+            "  ─────────────────────────────────────────────────────────────\n"
+        ));
 
         for r in &self.results {
-            s.push_str(&format!("  {:20} {:>10.1} {:>12.2} {:>10.2} {:>8}\n",
+            s.push_str(&format!(
+                "  {:20} {:>10.1} {:>12.2} {:>10.2} {:>8}\n",
                 r.decoder,
                 r.stats.fps,
                 r.stats.median_us / 1000.0,
                 r.stats.p99_us / 1000.0,
-                r.rating.as_str()));
+                r.rating.as_str()
+            ));
         }
 
         // Find best performer
-        if let Some(best) = self.results.iter().max_by(|a, b| {
-            a.stats.fps.partial_cmp(&b.stats.fps).unwrap()
-        }) {
-            s.push_str(&format!("\n  🏆 Best: {} ({:.1} FPS)\n", best.decoder, best.stats.fps));
+        if let Some(best) = self
+            .results
+            .iter()
+            .max_by(|a, b| a.stats.fps.partial_cmp(&b.stats.fps).unwrap())
+        {
+            s.push_str(&format!(
+                "\n  🏆 Best: {} ({:.1} FPS)\n",
+                best.decoder, best.stats.fps
+            ));
         }
 
         s
@@ -711,11 +840,36 @@ mod tests {
     #[test]
     fn test_timing_stats() {
         let timings = vec![
-            FrameTiming { frame_number: 1, decode_time_us: 1000, size_bytes: 1000, is_keyframe: true },
-            FrameTiming { frame_number: 2, decode_time_us: 500, size_bytes: 500, is_keyframe: false },
-            FrameTiming { frame_number: 3, decode_time_us: 750, size_bytes: 600, is_keyframe: false },
-            FrameTiming { frame_number: 4, decode_time_us: 600, size_bytes: 550, is_keyframe: false },
-            FrameTiming { frame_number: 5, decode_time_us: 800, size_bytes: 700, is_keyframe: false },
+            FrameTiming {
+                frame_number: 1,
+                decode_time_us: 1000,
+                size_bytes: 1000,
+                is_keyframe: true,
+            },
+            FrameTiming {
+                frame_number: 2,
+                decode_time_us: 500,
+                size_bytes: 500,
+                is_keyframe: false,
+            },
+            FrameTiming {
+                frame_number: 3,
+                decode_time_us: 750,
+                size_bytes: 600,
+                is_keyframe: false,
+            },
+            FrameTiming {
+                frame_number: 4,
+                decode_time_us: 600,
+                size_bytes: 550,
+                is_keyframe: false,
+            },
+            FrameTiming {
+                frame_number: 5,
+                decode_time_us: 800,
+                size_bytes: 700,
+                is_keyframe: false,
+            },
         ];
 
         let stats = TimingStats::from_timings(&timings);

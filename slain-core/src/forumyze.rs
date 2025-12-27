@@ -1,32 +1,32 @@
 // FORUMYZE - YouTube Comment Intelligence
-// 
+//
 // "What's this?"
 // ═══════════════════════════════════════════════════════════════════════════
-// 
+//
 // FORUMYZE filters the garbage so you can find real comments.
-// 
+//
 // YouTube comment sections are often 50-75% spam and bots - especially on
 // videos about civil rights, politics, or anything controversial. Coordinated
 // attacks flood comments with noise to drown out real discussion.
-// 
+//
 // FORUMYZE analyzes comments and shows you:
 // ✓ Real human discussions
-// ✓ Genuine questions and feedback  
+// ✓ Genuine questions and feedback
 // ✓ Creator replies (highlighted)
-// 
+//
 // And hides:
 // ✗ Bot-generated spam
 // ✗ Coordinated attack comments
 // ✗ Duplicate/copy-paste spam
 // ✗ Promotional garbage
-// 
+//
 // You provide your own YouTube API key (free from Google Cloud Console).
 // Your key, your quota, your privacy.
-// 
+//
 // ═══════════════════════════════════════════════════════════════════════════
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
@@ -67,45 +67,45 @@ Free tier: 10,000 units/day (enough for ~100 videos)
 pub struct ForumyzeSettings {
     // Master toggle
     pub enabled: bool,
-    
+
     // API Keys (user provides their own)
     pub youtube_api_key: Option<String>,
-    pub gemini_api_key: Option<String>,  // Optional: for AI analysis
-    
+    pub gemini_api_key: Option<String>, // Optional: for AI analysis
+
     // What to filter
     pub hide_spam: bool,
     pub hide_bots: bool,
     pub hide_duplicates: bool,
-    pub hide_coordinated: bool,      // Coordinated attack detection
-    
+    pub hide_coordinated: bool, // Coordinated attack detection
+
     // What to highlight
     pub highlight_creator: bool,
     pub highlight_verified: bool,
     pub highlight_top_fans: bool,
-    
+
     // Thresholds
-    pub spam_threshold: f32,         // 0.0-1.0, default 0.6
-    pub bot_threshold: f32,          // 0.0-1.0, default 0.7
-    
+    pub spam_threshold: f32, // 0.0-1.0, default 0.6
+    pub bot_threshold: f32,  // 0.0-1.0, default 0.7
+
     // Display
     pub sort_by: SortOrder,
-    pub show_analysis_badges: bool,  // Show spam/bot badges
+    pub show_analysis_badges: bool, // Show spam/bot badges
     pub compact_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SortOrder {
-    Relevance,      // YouTube default
+    Relevance, // YouTube default
     Newest,
     MostLiked,
     MostReplies,
-    RealFirst,      // FORUMYZE: real comments first
+    RealFirst, // FORUMYZE: real comments first
 }
 
 impl Default for ForumyzeSettings {
     fn default() -> Self {
         Self {
-            enabled: false,  // Off by default, user opts in
+            enabled: false, // Off by default, user opts in
             youtube_api_key: None,
             gemini_api_key: None,
             hide_spam: true,
@@ -139,7 +139,7 @@ pub struct Comment {
     pub timestamp: String,
     pub is_reply: bool,
     pub parent_id: Option<String>,
-    
+
     // FORUMYZE analysis
     pub classification: CommentClass,
     pub spam_score: f32,
@@ -148,7 +148,7 @@ pub struct Comment {
     pub duplicate_count: u32,
     pub is_creator: bool,
     pub is_verified: bool,
-    
+
     // Extended fields for legal_evidence compatibility
     pub like_count: u64,
     pub reply_count: u64,
@@ -158,12 +158,12 @@ pub struct Comment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommentClass {
-    Real,           // Genuine human comment
-    Spam,           // Promotional/scam
-    Bot,            // Automated/bot
-    Coordinated,    // Part of attack campaign
-    Duplicate,      // Copy-paste spam
-    Unknown,        // Not yet analyzed
+    Real,        // Genuine human comment
+    Spam,        // Promotional/scam
+    Bot,         // Automated/bot
+    Coordinated, // Part of attack campaign
+    Duplicate,   // Copy-paste spam
+    Unknown,     // Not yet analyzed
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,14 +172,14 @@ pub struct VideoComments {
     pub video_title: String,
     pub total_fetched: u32,
     pub comments: Vec<Comment>,
-    
+
     // Stats
     pub real_count: u32,
     pub spam_count: u32,
     pub bot_count: u32,
     pub duplicate_count: u32,
     pub real_percentage: f32,
-    
+
     // Extended fields for legal_evidence compatibility
     pub total_comments: usize,
     pub topics: Vec<String>,
@@ -210,35 +210,36 @@ pub fn analyze_comments(comments: &mut [Comment]) {
     // Step 1: Build frequency maps
     let mut text_freq: HashMap<String, u32> = HashMap::new();
     let mut author_freq: HashMap<String, u32> = HashMap::new();
-    
+
     for c in comments.iter() {
         let normalized = normalize_text(&c.text);
         *text_freq.entry(normalized).or_insert(0) += 1;
         *author_freq.entry(c.author_id.clone()).or_insert(0) += 1;
     }
-    
+
     // Step 2: Analyze each comment
     for comment in comments.iter_mut() {
         let normalized = normalize_text(&comment.text);
-        
+
         // Duplicate detection
         let dup_count = *text_freq.get(&normalized).unwrap_or(&1);
         comment.is_duplicate = dup_count > 2;
         comment.duplicate_count = dup_count;
-        
+
         // Spam indicators
         let mut spam_score = 0.0f32;
-        
+
         // Check for spam patterns
         let text_lower = comment.text.to_lowercase();
-        
+
         // Promotional spam
-        if text_lower.contains("check out my") || 
-           text_lower.contains("sub to my") ||
-           text_lower.contains("subscribe to my") {
+        if text_lower.contains("check out my")
+            || text_lower.contains("sub to my")
+            || text_lower.contains("subscribe to my")
+        {
             spam_score += 0.4;
         }
-        
+
         // Scam patterns
         if text_lower.contains("bitcoin") && text_lower.contains("profit") {
             spam_score += 0.5;
@@ -246,59 +247,57 @@ pub fn analyze_comments(comments: &mut [Comment]) {
         if text_lower.contains("whatsapp") || text_lower.contains("telegram") {
             spam_score += 0.3;
         }
-        
+
         // Excessive caps
-        let caps_ratio = comment.text.chars()
-            .filter(|c| c.is_uppercase())
-            .count() as f32 / comment.text.len().max(1) as f32;
+        let caps_ratio = comment.text.chars().filter(|c| c.is_uppercase()).count() as f32
+            / comment.text.len().max(1) as f32;
         if caps_ratio > 0.5 && comment.text.len() > 20 {
             spam_score += 0.2;
         }
-        
+
         // Excessive emojis
-        let emoji_count = comment.text.chars()
-            .filter(|c| *c as u32 > 0x1F300)
-            .count();
+        let emoji_count = comment.text.chars().filter(|c| *c as u32 > 0x1F300).count();
         if emoji_count > 10 {
             spam_score += 0.2;
         }
-        
+
         // Duplicate penalty
         if comment.is_duplicate {
             spam_score += 0.3 * (dup_count as f32 / 10.0).min(1.0);
         }
-        
+
         // Bot indicators
         let mut bot_score = 0.0f32;
-        
+
         // Generic bot phrases
-        if text_lower.contains("who else is watching in") ||
-           text_lower.contains("like if you") ||
-           text_lower.contains("who's here after") {
+        if text_lower.contains("who else is watching in")
+            || text_lower.contains("like if you")
+            || text_lower.contains("who's here after")
+        {
             bot_score += 0.3;
         }
-        
+
         // High frequency poster
         let post_count = *author_freq.get(&comment.author_id).unwrap_or(&1);
         if post_count > 5 {
             bot_score += 0.2 * (post_count as f32 / 20.0).min(1.0);
         }
-        
+
         // Very short generic comments
-        if comment.text.len() < 10 && (
-            text_lower == "first" ||
-            text_lower == "nice" ||
-            text_lower == "cool" ||
-            text_lower == "lol" ||
-            text_lower.starts_with("🔥")
-        ) {
+        if comment.text.len() < 10
+            && (text_lower == "first"
+                || text_lower == "nice"
+                || text_lower == "cool"
+                || text_lower == "lol"
+                || text_lower.starts_with("🔥"))
+        {
             bot_score += 0.2;
         }
-        
+
         // Set scores
         comment.spam_score = spam_score.min(1.0);
         comment.bot_score = bot_score.min(1.0);
-        
+
         // Classify
         comment.classification = if spam_score > 0.6 {
             CommentClass::Spam
@@ -326,7 +325,8 @@ fn normalize_text(text: &str) -> String {
 
 /// Filter comments based on settings
 pub fn filter_comments(comments: &[Comment], settings: &ForumyzeSettings) -> Vec<Comment> {
-    comments.iter()
+    comments
+        .iter()
         .filter(|c| {
             if settings.hide_spam && c.classification == CommentClass::Spam {
                 return false;
@@ -372,7 +372,7 @@ pub fn sort_comments(comments: &mut [Comment], order: SortOrder) {
             comments.sort_by(|a, b| {
                 let a_real = a.classification == CommentClass::Real;
                 let b_real = b.classification == CommentClass::Real;
-                
+
                 match (a_real, b_real) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
@@ -391,12 +391,25 @@ pub fn sort_comments(comments: &mut [Comment], order: SortOrder) {
 /// Calculate stats for video
 pub fn calculate_stats(comments: &[Comment]) -> (u32, u32, u32, u32, f32) {
     let total = comments.len() as u32;
-    let real = comments.iter().filter(|c| c.classification == CommentClass::Real).count() as u32;
-    let spam = comments.iter().filter(|c| c.classification == CommentClass::Spam).count() as u32;
-    let bot = comments.iter().filter(|c| c.classification == CommentClass::Bot).count() as u32;
+    let real = comments
+        .iter()
+        .filter(|c| c.classification == CommentClass::Real)
+        .count() as u32;
+    let spam = comments
+        .iter()
+        .filter(|c| c.classification == CommentClass::Spam)
+        .count() as u32;
+    let bot = comments
+        .iter()
+        .filter(|c| c.classification == CommentClass::Bot)
+        .count() as u32;
     let dup = comments.iter().filter(|c| c.is_duplicate).count() as u32;
-    let pct = if total > 0 { real as f32 / total as f32 * 100.0 } else { 0.0 };
-    
+    let pct = if total > 0 {
+        real as f32 / total as f32 * 100.0
+    } else {
+        0.0
+    };
+
     (real, spam, bot, dup, pct)
 }
 
@@ -410,38 +423,48 @@ pub async fn fetch_youtube_comments(
     max_results: u32,
 ) -> Result<Vec<Comment>, String> {
     let client = reqwest::Client::new();
-    
+
     let url = format!(
         "https://www.googleapis.com/youtube/v3/commentThreads?\
          part=snippet,replies&videoId={}&maxResults={}&key={}",
-        video_id, max_results.min(100), api_key
+        video_id,
+        max_results.min(100),
+        api_key
     );
-    
-    let response = client.get(&url)
+
+    let response = client
+        .get(&url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(format!("YouTube API error {}: {}", status, body));
     }
-    
-    let data: serde_json::Value = response.json()
+
+    let data: serde_json::Value = response
+        .json()
         .await
         .map_err(|e| format!("Parse error: {}", e))?;
-    
+
     let mut comments = Vec::new();
-    
+
     if let Some(items) = data["items"].as_array() {
         for item in items {
             let snippet = &item["snippet"]["topLevelComment"]["snippet"];
-            
+
             comments.push(Comment {
                 id: item["id"].as_str().unwrap_or("").to_string(),
-                author: snippet["authorDisplayName"].as_str().unwrap_or("").to_string(),
-                author_id: snippet["authorChannelId"]["value"].as_str().unwrap_or("").to_string(),
+                author: snippet["authorDisplayName"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                author_id: snippet["authorChannelId"]["value"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
                 text: snippet["textDisplay"].as_str().unwrap_or("").to_string(),
                 likes: snippet["likeCount"].as_u64().unwrap_or(0) as u32,
                 replies: item["snippet"]["totalReplyCount"].as_u64().unwrap_or(0) as u32,
@@ -458,12 +481,15 @@ pub async fn fetch_youtube_comments(
                 // Extended fields
                 like_count: snippet["likeCount"].as_u64().unwrap_or(0),
                 reply_count: item["snippet"]["totalReplyCount"].as_u64().unwrap_or(0),
-                author_channel: snippet["authorChannelUrl"].as_str().unwrap_or("").to_string(),
+                author_channel: snippet["authorChannelUrl"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
                 published_at: snippet["publishedAt"].as_str().unwrap_or("").to_string(),
             });
         }
     }
-    
+
     Ok(comments)
 }
 
@@ -482,7 +508,11 @@ pub fn extract_video_id(url: &str) -> Option<String> {
         url.split("embed/")
             .nth(1)
             .map(|s| s.split(&['?', '&'][..]).next().unwrap_or(s).to_string())
-    } else if url.len() == 11 && url.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    } else if url.len() == 11
+        && url
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         // Bare video ID
         Some(url.to_string())
     } else {
@@ -494,9 +524,8 @@ pub fn extract_video_id(url: &str) -> Option<String> {
 // Global State
 // ============================================================================
 
-static FORUMYZE_SETTINGS: Lazy<RwLock<ForumyzeSettings>> = Lazy::new(|| {
-    RwLock::new(ForumyzeSettings::default())
-});
+static FORUMYZE_SETTINGS: Lazy<RwLock<ForumyzeSettings>> =
+    Lazy::new(|| RwLock::new(ForumyzeSettings::default()));
 
 // ============================================================================
 // Type Aliases for Backwards Compatibility
@@ -524,84 +553,81 @@ pub struct Discussion {
 // Public Rust API
 // ============================================================================
 
-
 pub fn forumyze_get_description() -> &'static str {
     FORUMYZE_DESCRIPTION
 }
-
 
 pub fn forumyze_get_settings() -> ForumyzeSettings {
     FORUMYZE_SETTINGS.read().unwrap().clone()
 }
 
-
 pub fn forumyze_set_settings(settings: ForumyzeSettings) {
     *FORUMYZE_SETTINGS.write().unwrap() = settings;
 }
-
 
 pub fn forumyze_set_api_key(key: String) {
     FORUMYZE_SETTINGS.write().unwrap().youtube_api_key = Some(key);
 }
 
-
 pub fn forumyze_is_enabled() -> bool {
     FORUMYZE_SETTINGS.read().unwrap().enabled
 }
-
 
 pub fn forumyze_toggle(enabled: bool) {
     FORUMYZE_SETTINGS.write().unwrap().enabled = enabled;
 }
 
-
 pub async fn forumyze_analyze_video(video_url: String) -> Result<VideoComments, String> {
     let settings = FORUMYZE_SETTINGS.read().unwrap().clone();
-    
+
     if !settings.enabled {
         return Err("FORUMYZE is disabled. Enable it in settings.".to_string());
     }
-    
-    let api_key = settings.youtube_api_key.clone()
+
+    let api_key = settings
+        .youtube_api_key
+        .clone()
         .ok_or("YouTube API key not configured. Add it in settings.")?;
-    
-    let video_id = extract_video_id(&video_url)
-        .ok_or("Invalid YouTube URL")?;
-    
+
+    let video_id = extract_video_id(&video_url).ok_or("Invalid YouTube URL")?;
+
     // Fetch comments
     let mut comments = fetch_youtube_comments(&video_id, &api_key, 100).await?;
-    
+
     // Analyze
     analyze_comments(&mut comments);
-    
+
     // Calculate stats before filtering
     let (real, spam, bot, dup, pct) = calculate_stats(&comments);
-    
+
     // Filter based on settings
     let mut filtered = filter_comments(&comments, &settings);
-    
+
     // Sort
     sort_comments(&mut filtered, settings.sort_by);
-    
+
     // Categorize comments for legal_evidence compatibility
-    let core_dialogue: Vec<Comment> = filtered.iter()
+    let core_dialogue: Vec<Comment> = filtered
+        .iter()
         .filter(|c| c.classification == CommentClass::Real && c.text.len() > 50)
         .cloned()
         .collect();
-    
-    let questions: Vec<Comment> = filtered.iter()
+
+    let questions: Vec<Comment> = filtered
+        .iter()
         .filter(|c| c.text.contains('?'))
         .cloned()
         .collect();
-    
-    let anomalies: Vec<Comment> = filtered.iter()
+
+    let anomalies: Vec<Comment> = filtered
+        .iter()
         .filter(|c| c.spam_score > 0.3 && c.spam_score < 0.6)
         .cloned()
         .collect();
-    
+
     // Extract topics from comments
     let topics = extract_topics(&filtered);
-    
+
     Ok(VideoComments {
         video_id: video_id.clone(),
         video_title: String::new(),
@@ -634,18 +660,19 @@ pub async fn forumyze_analyze_video(video_url: String) -> Result<VideoComments, 
 /// Extract topics/keywords from comments
 fn extract_topics(comments: &[Comment]) -> Vec<String> {
     let mut word_freq: HashMap<String, u32> = HashMap::new();
-    
+
     // Common stop words to ignore
     let stop_words: std::collections::HashSet<&str> = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been",
-        "this", "that", "these", "those", "it", "its",
-        "to", "of", "in", "for", "on", "with", "at", "by", "from",
-        "and", "or", "but", "not", "no", "yes",
-        "i", "you", "he", "she", "we", "they", "my", "your", "his", "her",
-        "what", "who", "how", "why", "when", "where",
-        "just", "like", "so", "very", "really", "get", "got",
-    ].iter().cloned().collect();
-    
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "this", "that", "these",
+        "those", "it", "its", "to", "of", "in", "for", "on", "with", "at", "by", "from", "and",
+        "or", "but", "not", "no", "yes", "i", "you", "he", "she", "we", "they", "my", "your",
+        "his", "her", "what", "who", "how", "why", "when", "where", "just", "like", "so", "very",
+        "really", "get", "got",
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
     for comment in comments {
         let text_lower = comment.text.to_lowercase();
         for word in text_lower.split(|c: char| !c.is_alphanumeric()) {
@@ -654,17 +681,17 @@ fn extract_topics(comments: &[Comment]) -> Vec<String> {
             }
         }
     }
-    
+
     // Get top 10 most frequent words as topics
     let mut freq_vec: Vec<(String, u32)> = word_freq.into_iter().collect();
     freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-    
-    freq_vec.into_iter()
+
+    freq_vec
+        .into_iter()
         .take(10)
         .map(|(word, _)| word)
         .collect()
 }
-
 
 pub fn forumyze_extract_video_id(url: String) -> Option<String> {
     extract_video_id(&url)
