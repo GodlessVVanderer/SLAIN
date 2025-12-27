@@ -326,7 +326,7 @@ impl MessageBoard {
             |row| {
                 let role_str: String = row.get(8)?;
                 let prefs_str: String = row.get(9)?;
-                
+
                 Ok(UserProfile {
                     id: row.get(0)?,
                     google_id: row.get(1)?,

@@ -25,6 +25,14 @@ use slain_core::hw_decode::{find_best_decoder, available_decoders, HwCodec, HwDe
 use slain_core::pixel_convert::{PixelConverter, VideoFrame as PxVideoFrame, PixelFormat as PxFormat, ColorSpace};
 use slain_core::bandwidth::window_monitor;
 use slain_core::pipeline::{PipelineKind, PipelineManager};
+use slain_core::filter_pipeline::{
+    ContainerFormat,
+    FilterRegistry,
+    FilterChainSpec,
+    PipelineProfile,
+    PipelineProfileSelector,
+    ProfileScope,
+};
 use slain_core::h264_utils::{parse_avcc_extradata, avcc_to_annexb, is_annexb};
 
 // ============================================================================
@@ -180,6 +188,10 @@ struct SlainApp {
     pipeline: PipelineKind,
     pipeline_manager: Option<PipelineManager>,
 
+    // Filter pipeline profiles
+    pipeline_profiles: PipelineProfileSelector,
+    current_container: Option<ContainerFormat>,
+
     // Decoder preference
     #[allow(dead_code)] // Will be used for decoder selection UI
     preferred_decoder: Option<HwDecoderType>,
@@ -255,6 +267,16 @@ impl SlainApp {
             None
         };
         
+        let default_chain = FilterRegistry::global()
+            .read()
+            .chain_spec_for(&ContainerFormat::Mp4);
+        let global_profile = PipelineProfile::new(
+            "Default",
+            default_pipeline,
+            None,
+            default_chain,
+        );
+
         Self {
             playback_state: PlaybackState::Idle,
             media_info: None,
@@ -268,6 +290,8 @@ impl SlainApp {
             audio_started: false,
             pipeline: default_pipeline,
             pipeline_manager: None,
+            pipeline_profiles: PipelineProfileSelector::new(global_profile),
+            current_container: None,
             preferred_decoder,
             video_texture: None,
             frame_width: 1920,
@@ -289,6 +313,14 @@ impl SlainApp {
     fn apply_backend_change(&mut self) {
         if let Some(path) = self.video_path.clone() {
             self.open_file(path);
+        }
+    }
+
+    fn apply_pipeline_profile(&mut self, path: Option<&PathBuf>) {
+        let profile = self.pipeline_profiles.profile_for(path.map(|p| p.as_path()));
+        self.pipeline = profile.pipeline_kind;
+        if let Some(ref mut manager) = self.pipeline_manager {
+            manager.set_active(profile.pipeline_kind);
         }
     }
     
@@ -332,11 +364,15 @@ impl SlainApp {
         self.current_time_ms = 0;
         self.audio_started = false;
 
+        self.apply_pipeline_profile(Some(&path));
+
         // Determine file type by extension
         let ext = path.extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
+
+        self.current_container = ContainerFormat::from_extension(&ext);
         
         match ext.as_str() {
             "mkv" | "webm" => self.open_mkv(&path),
@@ -732,13 +768,122 @@ impl eframe::App for SlainApp {
                     }
                     if let Some(ref mut manager) = self.pipeline_manager {
                         let available = manager.available();
+                        let scope = self.pipeline_profiles.scope_for(self.video_path.as_deref());
                         for p in available {
                             let selected = self.pipeline == p;
                             if ui.radio(selected, format!("{:?}", p)).clicked() {
                                 self.pipeline = p;
+                                let current = self.pipeline_profiles.profile_for(self.video_path.as_deref()).clone();
+                                match scope {
+                                    ProfileScope::Global => {
+                                        self.pipeline_profiles.set_global(PipelineProfile::new(
+                                            current.name,
+                                            p,
+                                            current.config.clone(),
+                                            current.filter_chain.clone(),
+                                        ));
+                                    }
+                                    ProfileScope::PerFile => {
+                                        if let Some(path) = self.video_path.as_ref() {
+                                            self.pipeline_profiles.set_for_file(
+                                                path.clone(),
+                                                PipelineProfile::new(
+                                                    current.name,
+                                                    p,
+                                                    current.config.clone(),
+                                                    current.filter_chain.clone(),
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
                                 manager.set_active(p);
                                 ui.close_menu();
                             }
+                        }
+                    }
+                });
+
+                ui.menu_button("Filters", |ui| {
+                    let registry = FilterRegistry::global();
+                    let active_scope = self.pipeline_profiles.scope_for(self.video_path.as_deref());
+
+                    ui.heading("Filter Registry");
+                    for filter in registry.read().list_filters() {
+                        ui.horizontal(|ui| {
+                            ui.label(filter.name);
+                            ui.label(format!("priority {}", filter.priority));
+                        });
+                    }
+
+                    ui.separator();
+                    ui.heading("Default Container Chains");
+                    for container in [
+                        ContainerFormat::Mp4,
+                        ContainerFormat::Mkv,
+                        ContainerFormat::Avi,
+                        ContainerFormat::Ts,
+                    ] {
+                        let chain = registry.read().chain_spec_for(&container);
+                        ui.label(format!(
+                            "{}: {}",
+                            container.label(),
+                            chain.display_chain()
+                        ));
+                    }
+
+                    ui.separator();
+                    ui.heading("Active Pipeline Profile");
+                    ui.label(format!(
+                        "Scope: {}",
+                        match active_scope {
+                            ProfileScope::Global => "Global",
+                            ProfileScope::PerFile => "Per-file",
+                        }
+                    ));
+
+                    let active_profile = self.pipeline_profiles.profile_for(self.video_path.as_deref());
+                    ui.label(format!("Profile: {}", active_profile.name));
+                    ui.label(format!("Pipeline: {:?}", active_profile.pipeline_kind));
+                    ui.label(format!(
+                        "Filter Chain: {}",
+                        active_profile.filter_chain.display_chain()
+                    ));
+
+                    if let Some(container) = self.current_container.as_ref() {
+                        ui.separator();
+                        ui.heading("Current Container Override");
+                        let override_exists = registry.read().user_override_spec(container).is_some();
+                        ui.label(format!("Container: {}", container.label()));
+                        ui.label(if override_exists {
+                            "Override: enabled"
+                        } else {
+                            "Override: none"
+                        });
+
+                        ui.horizontal(|ui| {
+                            if ui.button("Disable filters for container").clicked() {
+                                registry.write().set_user_override(
+                                    container.clone(),
+                                    FilterChainSpec::empty(Some(container.clone())),
+                                );
+                            }
+                            if ui.button("Reset to defaults").clicked() {
+                                registry.write().clear_user_override(container);
+                            }
+                        });
+                    }
+
+                    if let Some(path) = self.video_path.as_ref() {
+                        ui.separator();
+                        ui.heading("Profile Scope");
+                        if matches!(active_scope, ProfileScope::Global) {
+                            if ui.button("Use per-file profile for this file").clicked() {
+                                let current = self.pipeline_profiles.global().clone();
+                                self.pipeline_profiles.set_for_file(path.clone(), current);
+                            }
+                        } else if ui.button("Revert to global profile").clicked() {
+                            self.pipeline_profiles.clear_for_file(path);
                         }
                     }
                 });
