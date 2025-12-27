@@ -11,9 +11,9 @@
 //!
 //! This is the professional-grade video pipeline that makes SLAIN special.
 
+use parking_lot::Mutex;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use parking_lot::Mutex;
 
 // ============================================================================
 // Compute Shaders (WGSL)
@@ -332,12 +332,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 pub struct VideoParams {
     pub width: u32,
     pub height: u32,
-    pub brightness: f32,    // -1.0 to 1.0, default 0.0
-    pub contrast: f32,      // 0.0 to 2.0, default 1.0
-    pub saturation: f32,    // 0.0 to 2.0, default 1.0
-    pub gamma: f32,         // 0.1 to 3.0, default 1.0 (2.2 for sRGB)
-    pub sharpness: f32,     // 0.0 to 1.0, default 0.0
-    pub denoise: f32,       // 0.0 to 1.0, default 0.0
+    pub brightness: f32, // -1.0 to 1.0, default 0.0
+    pub contrast: f32,   // 0.0 to 2.0, default 1.0
+    pub saturation: f32, // 0.0 to 2.0, default 1.0
+    pub gamma: f32,      // 0.1 to 3.0, default 1.0 (2.2 for sRGB)
+    pub sharpness: f32,  // 0.0 to 1.0, default 0.0
+    pub denoise: f32,    // 0.0 to 1.0, default 0.0
 }
 
 impl Default for VideoParams {
@@ -360,9 +360,9 @@ impl Default for VideoParams {
 pub struct HdrParams {
     pub width: u32,
     pub height: u32,
-    pub exposure: f32,      // Default 1.0
-    pub white_point: f32,   // Default 4.0
-    pub tonemap_mode: u32,  // 0=Reinhard, 1=ACES, 2=Hable
+    pub exposure: f32,     // Default 1.0
+    pub white_point: f32,  // Default 4.0
+    pub tonemap_mode: u32, // 0=Reinhard, 1=ACES, 2=Hable
     pub _pad: u32,
 }
 
@@ -459,55 +459,56 @@ impl GpuVideoProcessor {
             source: wgpu::ShaderSource::Wgsl(SHADER_NV12_TO_RGBA.into()),
         });
 
-        let nv12_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("nv12_bind_layout"),
-            entries: &[
-                // Params uniform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let nv12_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("nv12_bind_layout"),
+                entries: &[
+                    // Params uniform
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Y plane
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Y plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // UV plane
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // UV plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Output
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Output
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
         let nv12_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("nv12_pipeline_layout"),
@@ -530,67 +531,69 @@ impl GpuVideoProcessor {
             source: wgpu::ShaderSource::Wgsl(SHADER_YUV420P_TO_RGBA.into()),
         });
 
-        let yuv420p_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("yuv420p_bind_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let yuv420p_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("yuv420p_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let yuv420p_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("yuv420p_pipeline_layout"),
-            bind_group_layouts: &[&yuv420p_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let yuv420p_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("yuv420p_pipeline_layout"),
+                bind_group_layouts: &[&yuv420p_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let yuv420p_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("yuv420p_pipeline"),
@@ -607,41 +610,42 @@ impl GpuVideoProcessor {
             source: wgpu::ShaderSource::Wgsl(SHADER_HDR_TONEMAP.into()),
         });
 
-        let hdr_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("hdr_bind_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let hdr_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("hdr_bind_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
         let hdr_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("hdr_pipeline_layout"),
@@ -693,35 +697,48 @@ impl GpuVideoProcessor {
     /// Update video parameters
     pub fn set_params(&mut self, params: VideoParams) {
         self.params = params;
-        self.queue.write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
+        self.queue
+            .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
     }
 
     /// Update HDR parameters
     pub fn set_hdr_params(&mut self, params: HdrParams) {
         self.hdr_params = params;
-        self.queue.write_buffer(&self.hdr_params_buffer, 0, bytemuck::cast_slice(&[params]));
+        self.queue
+            .write_buffer(&self.hdr_params_buffer, 0, bytemuck::cast_slice(&[params]));
     }
 
     /// Process NV12 frame to RGBA
-    pub fn process_nv12(&mut self, y_data: &[u8], uv_data: &[u8], width: u32, height: u32) -> Vec<u8> {
+    pub fn process_nv12(
+        &mut self,
+        y_data: &[u8],
+        uv_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
         // Update params with current dimensions
         let mut params = self.params;
         params.width = width;
         params.height = height;
-        self.queue.write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
+        self.queue
+            .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
 
         // Create input buffers
-        let y_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("y_buffer"),
-            contents: y_data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let y_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("y_buffer"),
+                contents: y_data,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let uv_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("uv_buffer"),
-            contents: uv_data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let uv_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("uv_buffer"),
+                contents: uv_data,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         // Create output buffer
         let output_size = (width * height * 4) as u64;
@@ -764,9 +781,11 @@ impl GpuVideoProcessor {
         });
 
         // Dispatch compute
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compute_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("compute_encoder"),
+            });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -800,29 +819,43 @@ impl GpuVideoProcessor {
     }
 
     /// Process YUV420P frame to RGBA
-    pub fn process_yuv420p(&mut self, y_data: &[u8], u_data: &[u8], v_data: &[u8], width: u32, height: u32) -> Vec<u8> {
+    pub fn process_yuv420p(
+        &mut self,
+        y_data: &[u8],
+        u_data: &[u8],
+        v_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
         let mut params = self.params;
         params.width = width;
         params.height = height;
-        self.queue.write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
+        self.queue
+            .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[params]));
 
-        let y_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("y_buffer"),
-            contents: y_data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let y_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("y_buffer"),
+                contents: y_data,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let u_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("u_buffer"),
-            contents: u_data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let u_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("u_buffer"),
+                contents: u_data,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let v_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("v_buffer"),
-            contents: v_data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let v_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("v_buffer"),
+                contents: v_data,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_size = (width * height * 4) as u64;
         let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -843,15 +876,32 @@ impl GpuVideoProcessor {
             label: Some("yuv420p_bind_group"),
             layout: &self.yuv420p_bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.params_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: y_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: u_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: v_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: y_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: u_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: v_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(&self.yuv420p_pipeline);
@@ -863,7 +913,9 @@ impl GpuVideoProcessor {
 
         let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |r| { tx.send(r).unwrap(); });
+        buffer_slice.map_async(wgpu::MapMode::Read, move |r| {
+            tx.send(r).unwrap();
+        });
         self.device.poll(wgpu::Maintain::Wait);
         rx.recv().unwrap().unwrap();
 

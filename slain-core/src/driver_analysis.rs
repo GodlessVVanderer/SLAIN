@@ -1,7 +1,7 @@
 // Driver Hot Path Analysis
-// 
+//
 // NVIDIA driver is ~800MB installed. What do we ACTUALLY use?
-// 
+//
 // BLOAT (not needed for video playback):
 // ├── GeForce Experience (~200MB) - telemetry, game optimization
 // ├── NSight (~150MB) - debugging tools
@@ -22,9 +22,9 @@
 //
 // Strategy: Don't rewrite the driver. Bypass the bloat layers.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Driver Component Analysis
@@ -43,15 +43,15 @@ pub struct DriverComponent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ComponentCategory {
-    Kernel,         // Must have - kernel mode driver
-    Display,        // Must have - basic display output
-    Cuda,           // Need for GPU compute
-    VideoCodec,     // NVENC/NVDEC
-    Telemetry,      // BLOAT - phone home
-    GameFeatures,   // BLOAT - GeForce Experience stuff
-    Debug,          // BLOAT - NSight, debugging
-    Legacy,         // BLOAT - old tech (3D Vision, etc)
-    Audio,          // Optional - HDMI audio
+    Kernel,       // Must have - kernel mode driver
+    Display,      // Must have - basic display output
+    Cuda,         // Need for GPU compute
+    VideoCodec,   // NVENC/NVDEC
+    Telemetry,    // BLOAT - phone home
+    GameFeatures, // BLOAT - GeForce Experience stuff
+    Debug,        // BLOAT - NSight, debugging
+    Legacy,       // BLOAT - old tech (3D Vision, etc)
+    Audio,        // Optional - HDMI audio
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,11 +73,14 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             path: PathBuf::from("C:\\Windows\\System32\\drivers\\nvlddmkm.sys"),
             size_mb: 25.0,
             category: ComponentCategory::Kernel,
-            required_for: vec![UseCase::VideoPlayback, UseCase::Gaming, UseCase::MachineLearning],
+            required_for: vec![
+                UseCase::VideoPlayback,
+                UseCase::Gaming,
+                UseCase::MachineLearning,
+            ],
             can_disable: false,
             replacement: None,
         },
-        
         // DISPLAY - Required
         DriverComponent {
             name: "nvd3dumx.dll".to_string(),
@@ -88,7 +91,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: false,
             replacement: None,
         },
-        
         // CUDA - Required for AI
         DriverComponent {
             name: "nvcuda.dll".to_string(),
@@ -99,7 +101,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: false,
             replacement: None,
         },
-        
         // NVDEC - Required for video decode
         DriverComponent {
             name: "nvDecodeAPI64.dll".to_string(),
@@ -110,7 +111,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: false,
             replacement: None,
         },
-        
         // NVENC - Can offload to AMD!
         DriverComponent {
             name: "nvEncodeAPI64.dll".to_string(),
@@ -121,7 +121,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("AMD VCN via amf_encoder.rs".to_string()),
         },
-        
         // BLOAT: GeForce Experience
         DriverComponent {
             name: "GeForce Experience".to_string(),
@@ -132,7 +131,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("Not needed - use SLAIN instead".to_string()),
         },
-        
         // BLOAT: ShadowPlay
         DriverComponent {
             name: "ShadowPlay".to_string(),
@@ -143,7 +141,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("AMD VCN recording - frees NVIDIA for rendering".to_string()),
         },
-        
         // BLOAT: NSight
         DriverComponent {
             name: "NSight".to_string(),
@@ -154,7 +151,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("Not needed for end users".to_string()),
         },
-        
         // BLOAT: Telemetry
         DriverComponent {
             name: "NvTelemetry".to_string(),
@@ -165,7 +161,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("DISABLE THIS - spyware".to_string()),
         },
-        
         // BLOAT: 3D Vision
         DriverComponent {
             name: "3D Vision".to_string(),
@@ -176,7 +171,6 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             can_disable: true,
             replacement: Some("Dead technology - remove".to_string()),
         },
-        
         // BLOAT: PhysX (unless gaming)
         DriverComponent {
             name: "PhysX".to_string(),
@@ -188,14 +182,15 @@ pub fn analyze_nvidia_driver() -> DriverAnalysis {
             replacement: Some("Only needed for specific games".to_string()),
         },
     ];
-    
+
     let total_size: f32 = components.iter().map(|c| c.size_mb).sum();
-    let bloat_size: f32 = components.iter()
+    let bloat_size: f32 = components
+        .iter()
         .filter(|c| c.can_disable)
         .map(|c| c.size_mb)
         .sum();
     let required_size = total_size - bloat_size;
-    
+
     DriverAnalysis {
         components,
         total_size_mb: total_size,
@@ -221,21 +216,21 @@ pub struct DriverAnalysis {
 /// What we ACTUALLY call in the driver
 pub struct MinimalNvidiaInterface {
     // Display
-    pub set_display_mode: bool,      // D3DKMTSetDisplayMode
-    pub present: bool,               // D3DKMTPresent
-    
+    pub set_display_mode: bool, // D3DKMTSetDisplayMode
+    pub present: bool,          // D3DKMTPresent
+
     // CUDA
-    pub cuda_malloc: bool,           // cuMemAlloc
-    pub cuda_memcpy: bool,           // cuMemcpy
-    pub cuda_launch_kernel: bool,    // cuLaunchKernel
-    pub cuda_synchronize: bool,      // cuStreamSynchronize
-    
+    pub cuda_malloc: bool,        // cuMemAlloc
+    pub cuda_memcpy: bool,        // cuMemcpy
+    pub cuda_launch_kernel: bool, // cuLaunchKernel
+    pub cuda_synchronize: bool,   // cuStreamSynchronize
+
     // Video decode
-    pub create_decoder: bool,        // NvDecCreateDecoder
-    pub decode_picture: bool,        // NvDecDecodePicture
-    pub map_video_frame: bool,       // NvDecMapVideoFrame
-    
-    // That's it. Everything else is bloat.
+    pub create_decoder: bool, // NvDecCreateDecoder
+    pub decode_picture: bool, // NvDecDecodePicture
+    pub map_video_frame: bool, // NvDecMapVideoFrame
+
+                              // That's it. Everything else is bloat.
 }
 
 impl MinimalNvidiaInterface {
@@ -253,7 +248,6 @@ impl MinimalNvidiaInterface {
             "cuModuleLoad",
             "cuLaunchKernel",
             "cuStreamSynchronize",
-            
             // NVDEC (6 functions)
             "NvDecCreateDecoder",
             "NvDecDestroyDecoder",
@@ -261,7 +255,6 @@ impl MinimalNvidiaInterface {
             "NvDecMapVideoFrame",
             "NvDecUnmapVideoFrame",
             "NvDecGetDecoderCaps",
-            
             // Display (4 functions)
             "D3DKMTOpenAdapterFromLuid",
             "D3DKMTCreateDevice",
@@ -269,14 +262,14 @@ impl MinimalNvidiaInterface {
             "D3DKMTSetDisplayMode",
         ]
     }
-    
+
     /// Calculate what percentage of driver we use
     pub fn usage_analysis() -> DriverUsage {
         DriverUsage {
-            total_exports: 2847,        // Approximate exports in nvcuda.dll + nvd3dum
+            total_exports: 2847, // Approximate exports in nvcuda.dll + nvd3dum
             functions_we_use: 20,
-            percentage_used: 0.7,       // Less than 1%!
-            
+            percentage_used: 0.7, // Less than 1%!
+
             // What the bloat does
             unused_categories: vec![
                 "Game telemetry".to_string(),
@@ -309,14 +302,14 @@ pub struct DriverUsage {
 /// Minimal Rust wrapper that calls ONLY what we need
 pub mod direct_gpu {
     use super::*;
-    
+
     /// Load only the DLLs we need
     pub struct MinimalGpuContext {
         cuda_lib: Option<libloading::Library>,
         nvdec_lib: Option<libloading::Library>,
         // Skip: GeForce Experience, NSight, Telemetry, etc.
     }
-    
+
     impl MinimalGpuContext {
         pub fn new() -> Result<Self, String> {
             // Load ONLY nvcuda.dll - nothing else
@@ -324,18 +317,16 @@ pub mod direct_gpu {
                 libloading::Library::new("nvcuda.dll")
                     .map_err(|e| format!("CUDA not available: {}", e))?
             };
-            
+
             // Load ONLY nvDecodeAPI64.dll
-            let nvdec_lib = unsafe {
-                libloading::Library::new("nvDecodeAPI64.dll").ok()
-            };
-            
+            let nvdec_lib = unsafe { libloading::Library::new("nvDecodeAPI64.dll").ok() };
+
             Ok(Self {
                 cuda_lib: Some(cuda_lib),
                 nvdec_lib,
             })
         }
-        
+
         /// We skip:
         /// - nvEncodeAPI64.dll (use AMD VCN instead)
         /// - nvcuvid.dll (legacy, use nvdec directly)
@@ -359,23 +350,17 @@ pub mod direct_gpu {
 // Public Rust API
 // ============================================================================
 
-
-
-
 pub async fn driver_analyze() -> DriverAnalysis {
     analyze_nvidia_driver()
 }
-
 
 pub async fn driver_usage() -> DriverUsage {
     MinimalNvidiaInterface::usage_analysis()
 }
 
-
 pub async fn driver_required_functions() -> Vec<&'static str> {
     MinimalNvidiaInterface::required_functions()
 }
-
 
 pub async fn driver_skip_list() -> Vec<&'static str> {
     direct_gpu::MinimalGpuContext::what_we_skip()
