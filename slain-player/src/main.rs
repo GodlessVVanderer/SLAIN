@@ -1948,8 +1948,6 @@ fn decode_avi(
                         tracing::warn!("Decode error: {}", e);
                     }
                 }
-
-                thread::sleep(Duration::from_millis(16));
             }
             None => {
                 tracing::info!("End of AVI file");
@@ -2095,8 +2093,6 @@ fn decode_ts(
                         tracing::warn!("Decode error: {}", e);
                     }
                 }
-
-                thread::sleep(Duration::from_millis(16));
             }
             None => {
                 tracing::info!("End of TS file");
