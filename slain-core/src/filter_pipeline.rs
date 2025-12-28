@@ -187,8 +187,7 @@ pub struct FilterRegistry {
 
 impl FilterRegistry {
     pub fn global() -> &'static RwLock<Self> {
-        static REGISTRY: Lazy<RwLock<FilterRegistry>> =
-            Lazy::new(|| RwLock::new(FilterRegistry::with_defaults()));
+        static REGISTRY: Lazy<RwLock<FilterRegistry>> = Lazy::new(|| RwLock::new(FilterRegistry::with_defaults()));
         &REGISTRY
     }
 
@@ -220,8 +219,7 @@ impl FilterRegistry {
             descriptor,
             factory: std::sync::Arc::new(factory),
         });
-        self.filters
-            .sort_by(|a, b| b.descriptor.priority.cmp(&a.descriptor.priority));
+        self.filters.sort_by(|a, b| b.descriptor.priority.cmp(&a.descriptor.priority));
     }
 
     pub fn list_filters(&self) -> Vec<FilterDescriptor> {
@@ -264,21 +262,36 @@ impl FilterRegistry {
     }
 
     fn register_builtin_filters(&mut self) {
-        self.register_filter("Color Correct", 80, FilterCapabilities::any(), || {
-            Box::new(BasicFilter::new("Color Correct"))
-        });
-        self.register_filter("Denoise", 70, FilterCapabilities::any(), || {
-            Box::new(BasicFilter::new("Denoise"))
-        });
-        self.register_filter("Sharpen", 60, FilterCapabilities::any(), || {
-            Box::new(BasicFilter::new("Sharpen"))
-        });
-        self.register_filter("Deband", 50, FilterCapabilities::any(), || {
-            Box::new(BasicFilter::new("Deband"))
-        });
-        self.register_filter("Deinterlace", 40, FilterCapabilities::any(), || {
-            Box::new(BasicFilter::new("Deinterlace"))
-        });
+        self.register_filter(
+            "Color Correct",
+            80,
+            FilterCapabilities::any(),
+            || Box::new(BasicFilter::new("Color Correct")),
+        );
+        self.register_filter(
+            "Denoise",
+            70,
+            FilterCapabilities::any(),
+            || Box::new(BasicFilter::new("Denoise")),
+        );
+        self.register_filter(
+            "Sharpen",
+            60,
+            FilterCapabilities::any(),
+            || Box::new(BasicFilter::new("Sharpen")),
+        );
+        self.register_filter(
+            "Deband",
+            50,
+            FilterCapabilities::any(),
+            || Box::new(BasicFilter::new("Deband")),
+        );
+        self.register_filter(
+            "Deinterlace",
+            40,
+            FilterCapabilities::any(),
+            || Box::new(BasicFilter::new("Deinterlace")),
+        );
     }
 
     fn register_default_chains(&mut self) {
@@ -431,9 +444,7 @@ struct BasicFilter {
 
 impl BasicFilter {
     fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-        }
+        Self { name: name.to_string() }
     }
 }
 
