@@ -269,6 +269,16 @@ impl FilterRegistry {
             || Box::new(BasicFilter::new("Color Correct")),
         );
         self.register_filter(
+            "Motion Interpolation",
+            65,
+            FilterCapabilities {
+                codecs: Vec::new(),
+                containers: Vec::new(),
+                pixel_formats: vec![PixelFormat::PlanarRgb],
+            },
+            || Box::new(MotionInterpolationFilter::new()),
+        );
+        self.register_filter(
             "Denoise",
             70,
             FilterCapabilities::any(),
@@ -289,8 +299,12 @@ impl FilterRegistry {
         self.register_filter(
             "Deinterlace",
             40,
-            FilterCapabilities::any(),
-            || Box::new(BasicFilter::new("Deinterlace")),
+            FilterCapabilities {
+                codecs: Vec::new(),
+                containers: Vec::new(),
+                pixel_formats: vec![PixelFormat::PlanarRgb],
+            },
+            || Box::new(DeinterlaceFilter::new()),
         );
     }
 
@@ -458,6 +472,134 @@ impl Filter for BasicFilter {
     }
 
     fn process_frame(&mut self, frame: Frame) -> Frame {
+        frame
+    }
+}
+
+struct MotionInterpolationFilter {
+    prev_frame: Option<crate::frame_interpolation::RgbFrame>,
+    config: crate::frame_interpolation::MotionEstimationConfig,
+}
+
+impl MotionInterpolationFilter {
+    fn new() -> Self {
+        let config =
+            crate::frame_interpolation::MotionEstimationConfig::new(8, 4, 0.5).unwrap_or(
+                crate::frame_interpolation::MotionEstimationConfig {
+                    block_size: 8,
+                    search_radius: 4,
+                    alpha: 0.5,
+                },
+            );
+        Self {
+            prev_frame: None,
+            config,
+        }
+    }
+
+    fn to_rgb_frame(&self, frame: &Frame) -> Result<crate::frame_interpolation::RgbFrame, String> {
+        if frame.format != PixelFormat::PlanarRgb {
+            return Err("Unsupported pixel format for interpolation".to_string());
+        }
+        crate::frame_interpolation::RgbFrame::new(frame.width, frame.height, frame.data.clone())
+    }
+}
+
+impl Filter for MotionInterpolationFilter {
+    fn name(&self) -> &str {
+        "Motion Interpolation"
+    }
+
+    fn capabilities(&self) -> FilterCapabilities {
+        FilterCapabilities {
+            codecs: Vec::new(),
+            containers: Vec::new(),
+            pixel_formats: vec![PixelFormat::PlanarRgb],
+        }
+    }
+
+    fn process_frame(&mut self, frame: Frame) -> Frame {
+        let current = match self.to_rgb_frame(&frame) {
+            Ok(rgb) => rgb,
+            Err(_) => return frame,
+        };
+
+        let output = if let Some(ref prev) = self.prev_frame {
+            crate::frame_interpolation::motion_compensated_blend(prev, &current, self.config)
+                .ok()
+                .map(|blended| blended.data)
+        } else {
+            None
+        };
+
+        self.prev_frame = Some(current);
+
+        if let Some(data) = output {
+            Frame { data, ..frame }
+        } else {
+            frame
+        }
+    }
+}
+
+struct DeinterlaceFilter {
+    deinterlacer: crate::deinterlace::Deinterlacer,
+    width: u32,
+    height: u32,
+}
+
+impl DeinterlaceFilter {
+    fn new() -> Self {
+        let config = crate::deinterlace::DeinterlaceConfig::default();
+        let deinterlacer = crate::deinterlace::Deinterlacer::new(config, 0, 0);
+        Self {
+            deinterlacer,
+            width: 0,
+            height: 0,
+        }
+    }
+
+    fn ensure_size(&mut self, frame: &Frame) {
+        if frame.width == 0 || frame.height == 0 {
+            return;
+        }
+        if frame.width != self.width || frame.height != self.height {
+            self.width = frame.width;
+            self.height = frame.height;
+            self.deinterlacer =
+                crate::deinterlace::Deinterlacer::new(*self.deinterlacer.config(), frame.width, frame.height);
+        }
+    }
+}
+
+impl Filter for DeinterlaceFilter {
+    fn name(&self) -> &str {
+        "Deinterlace"
+    }
+
+    fn capabilities(&self) -> FilterCapabilities {
+        FilterCapabilities {
+            codecs: Vec::new(),
+            containers: Vec::new(),
+            pixel_formats: vec![PixelFormat::PlanarRgb],
+        }
+    }
+
+    fn process_frame(&mut self, mut frame: Frame) -> Frame {
+        if frame.format != PixelFormat::PlanarRgb {
+            return frame;
+        }
+
+        if self.deinterlacer.config().mode == crate::deinterlace::DeinterlaceMode::Off {
+            return frame;
+        }
+
+        self.ensure_size(&frame);
+
+        let (frames, _) = self.deinterlacer.process(&frame.data);
+        if let Some(first) = frames.first() {
+            frame.data = first.clone();
+        }
         frame
     }
 }

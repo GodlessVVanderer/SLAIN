@@ -32,6 +32,7 @@ pub mod vaapi_decode;
 // Container Demuxers
 // ============================================================================
 pub mod avi_demux;
+pub mod demuxer;
 pub mod lav;
 pub mod mkv;
 pub mod mp4_demux;
@@ -48,13 +49,17 @@ pub mod dshow; // LAV Filters via DirectShow COM
 // ============================================================================
 pub mod audio;
 pub mod camera;
+pub mod deinterlace;
 pub mod filter_pipeline;
+pub mod frame_interpolation;
 pub mod frame_queue;
+pub mod potplayer_compat;
 pub mod video_filters;
 pub mod filter_pipeline;
 pub mod subtitles;
 pub mod imaging;
 pub mod pixel_convert;
+pub mod shader_filters;
 pub mod subtitles;
 pub mod video_filters;
 
@@ -71,6 +76,8 @@ pub mod streaming;
 // ============================================================================
 pub mod bandwidth;
 pub mod pipeline;
+pub mod video_pipeline;
+pub mod vapoursynth_bridge;
 
 // ============================================================================
 // Features
