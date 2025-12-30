@@ -773,13 +773,13 @@ impl McpServer {
         let pipeline = args["pipeline"].as_str().ok_or("pipeline is required")?;
         let script = args["script"].as_str();
 
-        let desc = match pipeline {
-            "direct" => "Direct passthrough (no processing)",
-            "avisynth" => "AviSynth filter chain (DLL FFI)",
-            "vapoursynth" => "VapourSynth Python filters (DLL FFI)",
-            "vulkan" => "Vulkan compute shaders (wgpu)",
-            "cuda" => "CUDA kernels (DLL FFI)",
-            "sidecar" => "External sidecar process (IPC)",
+        let desc: String = match pipeline {
+            "direct" => "Direct passthrough (no processing)".to_string(),
+            "avisynth" => "AviSynth filter chain (DLL FFI)".to_string(),
+            "vapoursynth" => "VapourSynth Python filters (DLL FFI)".to_string(),
+            "vulkan" => "Vulkan compute shaders (wgpu)".to_string(),
+            "cuda" => "CUDA kernels (DLL FFI)".to_string(),
+            "sidecar" => "External sidecar process (IPC)".to_string(),
             _ => return Err(format!("Unknown pipeline: {}", pipeline)),
         };
 

@@ -31,8 +31,8 @@ impl VapourSynthRuntime {
             let vs_path = vs_path.unwrap_or(&vs_default);
             let vsscript_path = vsscript_path.unwrap_or(&vsscript_default);
 
-            let vs_lib = Library::new(vs_path).ok();
-            let vsscript_lib = Library::new(vsscript_path).ok();
+            let vs_lib = unsafe { Library::new(vs_path).ok() };
+            let vsscript_lib = unsafe { Library::new(vsscript_path).ok() };
 
             if let (Some(vs_lib), Some(vsscript_lib)) = (vs_lib, vsscript_lib) {
                 return Self {

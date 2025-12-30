@@ -6,7 +6,8 @@ use std::path::Path;
 
 use crate::avi_demux::{AviDemuxer, AviPacket};
 use crate::mkv::{MkvDemuxer, MkvInfo, MkvPacket, MkvParser};
-use crate::mp4_demux::{Mp4Demuxer, Packet as Mp4Packet};
+use crate::mp4_demux::mp4::Mp4Demuxer;
+use crate::mp4_demux::Packet as Mp4Packet;
 use crate::ts_demux::{TsDemuxer, TsPacket};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
