@@ -15,6 +15,11 @@ pub fn avcc_to_annexb(data: &[u8], nal_length_size: usize) -> Vec<u8> {
         return data.to_vec();
     }
 
+    // If data already looks like Annex B, return as-is
+    if is_annexb(data) {
+        return data.to_vec();
+    }
+
     let mut result = Vec::with_capacity(data.len() + 64);
     let mut offset = 0;
 
@@ -31,6 +36,11 @@ pub fn avcc_to_annexb(data: &[u8], nal_length_size: usize) -> Vec<u8> {
         result.extend_from_slice(&ANNEX_B_START_CODE);
         result.extend_from_slice(&data[offset..offset + nal_len]);
         offset += nal_len;
+    }
+
+    // If conversion produced nothing useful, return original data
+    if result.is_empty() {
+        return data.to_vec();
     }
 
     result
@@ -155,14 +165,18 @@ pub fn parse_hvcc_extradata(extradata: &[u8]) -> Option<(Vec<u8>, usize)> {
     Some((result, nal_length_size))
 }
 
-/// Check if data already has Annex B start codes
+/// Check if data contains Annex B start codes (3-byte or 4-byte) anywhere in first N bytes
 pub fn is_annexb(data: &[u8]) -> bool {
-    if data.len() < 4 {
-        return false;
+    let max_search = data.len().min(32); // Limit scan to first 32 bytes
+    for i in 0..max_search.saturating_sub(3) {
+        if data[i..].starts_with(&[0x00, 0x00, 0x01]) {
+            return true;
+        }
+        if i + 4 <= data.len() && data[i..].starts_with(&[0x00, 0x00, 0x00, 0x01]) {
+            return true;
+        }
     }
-    // Check for 4-byte or 3-byte start code
-    (data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1)
-        || (data[0] == 0 && data[1] == 0 && data[2] == 1)
+    false
 }
 
 /// Read big-endian unsigned integer of variable size (1-4 bytes)
@@ -193,5 +207,16 @@ mod tests {
         assert!(is_annexb(&[0x00, 0x00, 0x00, 0x01, 0x67]));
         assert!(is_annexb(&[0x00, 0x00, 0x01, 0x67]));
         assert!(!is_annexb(&[0x00, 0x00, 0x00, 0x05, 0x67])); // AVCC
+    }
+
+    #[test]
+    fn test_is_annexb_offset() {
+        // Start code at offset 2
+        let annexb_data = vec![0x12, 0x34, 0x00, 0x00, 0x01, 0x67, 0x42];
+        assert!(is_annexb(&annexb_data));
+        
+        // Start code at offset 3
+        let annexb_data2 = vec![0xAB, 0xCD, 0xEF, 0x00, 0x00, 0x00, 0x01, 0x67];
+        assert!(is_annexb(&annexb_data2));
     }
 }

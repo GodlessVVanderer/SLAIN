@@ -30,15 +30,8 @@ use slain_core::hw_decode::{
 use slain_core::mkv::{MkvDemuxer, MkvInfo, MkvParser, MkvTrack};
 use slain_core::mp4_demux::mp4::Mp4Demuxer;
 use slain_core::pipeline::{PipelineKind, PipelineManager};
-use slain_core::filter_pipeline::{
-    ContainerFormat,
-    FilterRegistry,
-    FilterChainSpec,
-    PipelineProfile,
-    PipelineProfileSelector,
-    ProfileScope,
-};
-use slain_core::h264_utils::{parse_avcc_extradata, avcc_to_annexb, is_annexb};
+use slain_core::pixel_convert::{ColorSpace, PixelConverter, PixelFormat as PxFormat, VideoFrame as PxVideoFrame};
+use slain_core::ts_demux::{TsDemuxer, StreamCodec as TsStreamCodec};
 
 // ============================================================================
 // Playback State Machine
@@ -160,7 +153,7 @@ fn main() -> Result<()> {
     eframe::run_native(
         "SLAIN Player",
         options,
-        Box::new(|cc| Ok(Box::new(SlainApp::new(cc, app_options)))),
+        Box::new(|cc| Ok(Box::new(SlainApp::new(cc)))),
     )
     .map_err(|e| anyhow::anyhow!("eframe error: {}", e))?;
 
@@ -266,7 +259,7 @@ impl SlainApp {
 
         // Auto-detect best pipeline
         let default_pipeline = if slain_core::nvdec::nvdec_available() {
-            PipelineKind::Nvdec
+            PipelineKind::Hardware
         } else {
             PipelineKind::SoftwareOnly
         };
@@ -288,6 +281,15 @@ impl SlainApp {
             default_chain,
         );
 
+        // Check if FFmpeg is available on PATH
+        let ffmpeg_available = Command::new("ffmpeg")
+            .arg("-version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
         Self {
             playback_state: PlaybackState::Idle,
             media_info: None,
@@ -297,6 +299,7 @@ impl SlainApp {
             current_time_ms: 0,
             duration_ms: 0,
             volume: 1.0,
+            ffmpeg_available,
             audio_player: None,
             audio_started: false,
             pipeline: default_pipeline,
@@ -304,6 +307,7 @@ impl SlainApp {
             pipeline_profiles: PipelineProfileSelector::new(global_profile),
             current_container: None,
             preferred_decoder,
+            use_ffmpeg: false,
             video_texture: None,
             frame_width: 1920,
             frame_height: 1080,
@@ -453,7 +457,8 @@ impl SlainApp {
                 let use_ffmpeg = self.use_ffmpeg;
 
                 self.decode_thread = Some(thread::spawn(move || {
-                    decode_loop(shared, video_path, width, height, use_ffmpeg);
+                    let _ = use_ffmpeg; // Reserved for future FFmpeg sidecar support
+                    decode_loop(shared, video_path, width, height);
                 }));
 
                 self.shared.is_playing.store(true, Ordering::SeqCst);
@@ -527,7 +532,8 @@ impl SlainApp {
                 let use_ffmpeg = self.use_ffmpeg;
 
                 self.decode_thread = Some(thread::spawn(move || {
-                    decode_loop(shared, video_path, width, height, use_ffmpeg);
+                    let _ = use_ffmpeg; // Reserved for future FFmpeg sidecar support
+                    decode_loop(shared, video_path, width, height);
                 }));
 
                 self.shared.is_playing.store(true, Ordering::SeqCst);
@@ -2211,6 +2217,13 @@ fn decode_mp4(
     let mut demuxer = Mp4Demuxer::new(reader).map_err(|e| format!("Demux init: {}", e))?;
 
     let streams = demuxer.streams();
+    
+    // Debug: log all streams found
+    tracing::info!("MP4 found {} streams:", streams.len());
+    for (i, s) in streams.iter().enumerate() {
+        tracing::info!("  Stream {}: type={:?}, codec={:?}", i, s.codec_type, s.codec);
+    }
+    
     let (video_idx, video_info) = match streams
         .iter()
         .enumerate()
@@ -2218,7 +2231,7 @@ fn decode_mp4(
     {
         Some((idx, info)) => (idx, info),
         None => {
-            tracing::error!("No video stream found in MP4");
+            tracing::error!("No video stream found in MP4 (streams={:?})", streams);
             return Err("No video stream found".into());
         }
     };

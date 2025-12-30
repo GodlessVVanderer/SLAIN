@@ -36,30 +36,33 @@ pub mod demuxer;
 pub mod lav;
 pub mod mkv;
 pub mod mp4_demux;
-pub mod ts_demux; // LAV Filters replacement (splitter + decoders)
+pub mod ts_demux;
 
 // ============================================================================
 // DirectShow Integration (Windows)
 // ============================================================================
 #[cfg(windows)]
-pub mod dshow; // LAV Filters via DirectShow COM
+pub mod dshow;
+
+// ============================================================================
+// Video Processing Pipeline
+// ============================================================================
+pub mod deinterlace;
+pub mod frame_interpolation;
+pub mod video_pipeline;
+pub mod vapoursynth_bridge;
+pub mod potplayer_compat;
+pub mod shader_filters;
 
 // ============================================================================
 // Media Processing
 // ============================================================================
 pub mod audio;
 pub mod camera;
-pub mod deinterlace;
 pub mod filter_pipeline;
-pub mod frame_interpolation;
 pub mod frame_queue;
-pub mod potplayer_compat;
-pub mod video_filters;
-pub mod filter_pipeline;
-pub mod subtitles;
 pub mod imaging;
 pub mod pixel_convert;
-pub mod shader_filters;
 pub mod subtitles;
 pub mod video_filters;
 
@@ -76,8 +79,6 @@ pub mod streaming;
 // ============================================================================
 pub mod bandwidth;
 pub mod pipeline;
-pub mod video_pipeline;
-pub mod vapoursynth_bridge;
 
 // ============================================================================
 // Features
