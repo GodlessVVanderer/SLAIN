@@ -569,11 +569,16 @@ pub mod mp4 {
         }
 
         fn parse_stsd(&mut self, track: &mut Track, size: u64) -> Result<(), String> {
+            let start_pos = self.reader.stream_position().map_err(|e| format!("Position error: {}", e))?;
+            let end_pos = start_pos + size;
+            
             self.skip_bytes(4)?; // version + flags
             let entry_count = self.read_u32()?;
 
             if entry_count > 0 {
                 let (entry_size, codec_fourcc) = self.read_atom_header()?;
+                let entry_data_start = self.reader.stream_position().map_err(|e| format!("Position error: {}", e))?;
+                let entry_data_end = entry_data_start + entry_size.saturating_sub(8);
 
                 track.stream_info.codec = match codec_fourcc {
                     AVC1 => CodecId::Video(VideoCodec::H264),
@@ -591,12 +596,36 @@ pub mod mp4 {
                 // Parse video/audio specific info
                 match track.stream_info.codec_type {
                     CodecType::Video => {
+                        // VisualSampleEntry (ISO 14496-12):
+                        // 6 bytes reserved
+                        // 2 bytes data_reference_index
+                        // 2 bytes pre_defined
+                        // 2 bytes reserved  
+                        // 12 bytes pre_defined (3x u32)
+                        // 2 bytes width
+                        // 2 bytes height
+                        // 4 bytes horizontal_resolution (16.16 fixed)
+                        // 4 bytes vertical_resolution (16.16 fixed)
+                        // 4 bytes reserved
+                        // 2 bytes frame_count
+                        // 32 bytes compressor_name
+                        // 2 bytes depth
+                        // 2 bytes pre_defined
+                        // Total: 78 bytes
                         self.skip_bytes(6)?; // reserved
                         self.skip_bytes(2)?; // data_reference_index
-                        self.skip_bytes(16)?; // pre_defined, reserved
+                        self.skip_bytes(2)?; // pre_defined
+                        self.skip_bytes(2)?; // reserved
+                        self.skip_bytes(12)?; // pre_defined
                         let width = self.read_u16()?;
                         let height = self.read_u16()?;
-                        self.skip_bytes(50)?; // rest of visual sample entry
+                        self.skip_bytes(4)?; // horizontal_resolution
+                        self.skip_bytes(4)?; // vertical_resolution
+                        self.skip_bytes(4)?; // reserved
+                        self.skip_bytes(2)?; // frame_count
+                        self.skip_bytes(32)?; // compressor_name
+                        self.skip_bytes(2)?; // depth
+                        self.skip_bytes(2)?; // pre_defined
 
                         track.video_info = Some(VideoInfo {
                             width: width as u32,
@@ -608,31 +637,41 @@ pub mod mp4 {
                             color_space: ColorSpace::BT709,
                         });
 
-                        // Parse avcC/hvcC for extra_data
-                        let remaining = entry_size as i64 - 8 - 78;
-                        if remaining > 8 {
-                            // Look for codec config
-                            let start = self.reader.stream_position().unwrap_or(0);
-                            let end = start + remaining as u64;
-
-                            while self.reader.stream_position().unwrap_or(end) < end {
-                                if let Ok((cfg_size, cfg_type)) = self.read_atom_header() {
-                                    if cfg_type == 0x61766343 || cfg_type == 0x68766343 {
-                                        // avcC or hvcC
-                                        let data_size = (cfg_size - 8) as usize;
+                        // Parse extension boxes (avcC/hvcC)
+                        let current_pos = self.reader.stream_position().unwrap_or(entry_data_end);
+                        while current_pos < entry_data_end {
+                            if let Ok((cfg_size, cfg_type)) = self.read_atom_header() {
+                                if cfg_type == 0x61766343 || cfg_type == 0x68766343 {
+                                    // avcC or hvcC
+                                    let data_size = cfg_size.saturating_sub(8) as usize;
+                                    if data_size > 0 && data_size < 10_000_000 {
                                         let mut data = vec![0u8; data_size];
-                                        self.reader.read_exact(&mut data).ok();
-                                        track.stream_info.extra_data = data;
+                                        if self.reader.read_exact(&mut data).is_ok() {
+                                            track.stream_info.extra_data = data;
+                                        }
                                     } else {
-                                        self.skip_bytes(cfg_size - 8).ok();
+                                        self.skip_bytes(cfg_size.saturating_sub(8)).ok();
                                     }
                                 } else {
-                                    break;
+                                    self.skip_bytes(cfg_size.saturating_sub(8)).ok();
                                 }
+                            } else {
+                                break;
                             }
+                            let new_pos = self.reader.stream_position().unwrap_or(entry_data_end);
+                            if new_pos >= entry_data_end { break; }
                         }
                     }
                     CodecType::Audio => {
+                        // AudioSampleEntry:
+                        // 6 bytes reserved
+                        // 2 bytes data_reference_index
+                        // 8 bytes reserved
+                        // 2 bytes channel_count
+                        // 2 bytes sample_size
+                        // 2 bytes pre_defined
+                        // 2 bytes reserved
+                        // 4 bytes sample_rate (16.16 fixed)
                         self.skip_bytes(6)?; // reserved
                         self.skip_bytes(2)?; // data_reference_index
                         self.skip_bytes(8)?; // reserved
@@ -656,14 +695,10 @@ pub mod mp4 {
                     }
                     _ => {}
                 }
-
-                // Skip any remaining bytes in stsd
-                let read_so_far = 8 + 78; // Approximate
-                if entry_size > read_so_far {
-                    self.skip_bytes(entry_size - read_so_far).ok();
-                }
             }
 
+            // Always seek to end of stsd to avoid misalignment
+            self.reader.seek(SeekFrom::Start(end_pos)).map_err(|e| format!("Seek error: {}", e))?;
             Ok(())
         }
 
