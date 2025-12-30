@@ -59,13 +59,10 @@ pub mod shader_filters;
 // ============================================================================
 pub mod audio;
 pub mod camera;
-pub mod deinterlace;
 pub mod filter_pipeline;
-pub mod frame_interpolation;
 pub mod frame_queue;
 pub mod imaging;
 pub mod pixel_convert;
-pub mod shader_filters;
 pub mod subtitles;
 pub mod video_filters;
 
@@ -82,8 +79,6 @@ pub mod streaming;
 // ============================================================================
 pub mod bandwidth;
 pub mod pipeline;
-pub mod video_pipeline;
-pub mod vapoursynth_bridge;
 
 // ============================================================================
 // Features
