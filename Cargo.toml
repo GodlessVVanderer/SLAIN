@@ -17,6 +17,7 @@ repository = "https://github.com/josh/slain"
 # Error handling
 thiserror = "2.0"
 anyhow = "1.0"
+bytes = "1.7"
 
 # Logging
 tracing = "0.1"

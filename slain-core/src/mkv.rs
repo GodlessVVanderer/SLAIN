@@ -13,6 +13,8 @@ use matroska_demuxer::{Frame, MatroskaFile, TrackEntry, TrackType};
 // Data Types
 // ============================================================================
 
+pub mod parser;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MkvInfo {
     pub file_path: String,

@@ -1241,6 +1241,7 @@ fn mkv_codec_to_hwcodec(codec_id: &str) -> Result<HwCodec, String> {
 struct HeadlessOptions {
     input: PathBuf,
     frames: u64,
+    interpolate_alpha: Option<f32>,
 }
 
 fn run_headless(args: &[String]) -> Result<()> {
@@ -1259,25 +1260,42 @@ fn run_headless(args: &[String]) -> Result<()> {
         .unwrap_or("")
         .to_lowercase();
 
-    let stats =
-        match ext.as_str() {
-            "mp4" | "m4v" | "mov" => decode_mp4_headless(&options.input, options.frames)
-                .map_err(|e| anyhow::anyhow!(e))?,
-            "mkv" | "webm" => decode_mkv_headless(&options.input, options.frames)
-                .map_err(|e| anyhow::anyhow!(e))?,
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Unsupported container for headless playback: {:?}",
-                    ext
-                ));
-            }
-        };
+    let stats = match ext.as_str() {
+        "mp4" | "m4v" | "mov" => decode_mp4_headless(
+            &options.input,
+            options.frames,
+            options.interpolate_alpha,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?,
+        "mkv" | "webm" => decode_mkv_headless(
+            &options.input,
+            options.frames,
+            options.interpolate_alpha,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unsupported container for headless playback: {:?}",
+                ext
+            ));
+        }
+    };
 
-    tracing::info!(
-        "Headless playback complete: decoded_frames={}, duration_ms={}",
-        stats.decoded_frames,
-        stats.duration_ms
-    );
+    if let Some(alpha) = options.interpolate_alpha {
+        tracing::info!(
+            "Headless playback complete: decoded_frames={}, interpolated_frames={}, duration_ms={}, alpha={}",
+            stats.decoded_frames,
+            stats.interpolated_frames,
+            stats.duration_ms,
+            alpha
+        );
+    } else {
+        tracing::info!(
+            "Headless playback complete: decoded_frames={}, duration_ms={}",
+            stats.decoded_frames,
+            stats.duration_ms
+        );
+    }
 
     Ok(())
 }
@@ -1285,6 +1303,7 @@ fn run_headless(args: &[String]) -> Result<()> {
 fn parse_headless_args(args: &[String]) -> Result<HeadlessOptions> {
     let mut input: Option<PathBuf> = None;
     let mut frames: u64 = 120;
+    let mut interpolate_alpha: Option<f32> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -1308,6 +1327,25 @@ fn parse_headless_args(args: &[String]) -> Result<HeadlessOptions> {
                     .map_err(|e| anyhow::anyhow!("Invalid frame count {}: {}", value, e))?;
                 i += 2;
             }
+            "--interpolate" => {
+                interpolate_alpha = Some(0.5);
+                i += 1;
+            }
+            "--interpolate-alpha" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for --interpolate-alpha"))?;
+                let alpha = value
+                    .parse::<f32>()
+                    .map_err(|e| anyhow::anyhow!("Invalid interpolate alpha {}: {}", value, e))?;
+                if !(0.0..=1.0).contains(&alpha) {
+                    return Err(anyhow::anyhow!(
+                        "Interpolate alpha must be between 0.0 and 1.0"
+                    ));
+                }
+                interpolate_alpha = Some(alpha);
+                i += 2;
+            }
             "--help" | "-h" => {
                 print_headless_usage();
                 std::process::exit(0);
@@ -1323,11 +1361,17 @@ fn parse_headless_args(args: &[String]) -> Result<HeadlessOptions> {
         anyhow::anyhow!("Missing required --input for headless playback")
     })?;
 
-    Ok(HeadlessOptions { input, frames })
+    Ok(HeadlessOptions {
+        input,
+        frames,
+        interpolate_alpha,
+    })
 }
 
 fn print_headless_usage() {
-    eprintln!("\nHeadless playback usage:\n  slain --headless --input <file> [--frames <n>]\n");
+    eprintln!(
+        "\nHeadless playback usage:\n  slain --headless --input <file> [--frames <n>] [--interpolate] [--interpolate-alpha <0-1>]\n"
+    );
 }
 
 // ============================================================================
@@ -1336,12 +1380,20 @@ fn print_headless_usage() {
 
 struct HeadlessStats {
     decoded_frames: u64,
+    interpolated_frames: u64,
     duration_ms: u64,
 }
 
-fn decode_mp4_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessStats, String> {
+fn decode_mp4_headless(
+    path: &PathBuf,
+    target_frames: u64,
+    interpolate_alpha: Option<f32>,
+) -> Result<HeadlessStats, String> {
     use std::fs::File;
     use std::io::BufReader;
+
+    let mut prev_frame: Option<slain_core::frame_interpolation::RgbFrame> = None;
+    let mut interpolated_frames: u64 = 0;
 
     let file = File::open(path).map_err(|e| format!("Open error: {}", e))?;
     let reader = BufReader::new(file);
@@ -1429,6 +1481,21 @@ fn decode_mp4_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessSta
                         .map_err(|e| format!("Pixel convert error: {}", e))?;
                 }
 
+                if let Some(alpha) = interpolate_alpha {
+                    let current = slain_core::frame_interpolation::RgbFrame::new(
+                        decoded.width,
+                        decoded.height,
+                        dst_frame.data.clone(),
+                    )?;
+                    if let Some(ref previous) = prev_frame {
+                        let _ = slain_core::frame_interpolation::interpolate_rgb(
+                            previous, &current, alpha,
+                        )?;
+                        interpolated_frames += 1;
+                    }
+                    prev_frame = Some(current);
+                }
+
                 let pts_ms = if packet.pts > 0 {
                     (packet.pts as u64) / 1000
                 } else {
@@ -1446,13 +1513,21 @@ fn decode_mp4_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessSta
 
     Ok(HeadlessStats {
         decoded_frames,
+        interpolated_frames,
         duration_ms: last_pts_ms,
     })
 }
 
-fn decode_mkv_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessStats, String> {
+fn decode_mkv_headless(
+    path: &PathBuf,
+    target_frames: u64,
+    interpolate_alpha: Option<f32>,
+) -> Result<HeadlessStats, String> {
     use std::fs::File;
     use std::io::BufReader;
+
+    let mut prev_frame: Option<slain_core::frame_interpolation::RgbFrame> = None;
+    let mut interpolated_frames: u64 = 0;
 
     let mut parser = MkvParser::new();
     let info = parser.parse(path)?;
@@ -1546,6 +1621,21 @@ fn decode_mkv_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessSta
                         .map_err(|e| format!("Pixel convert error: {}", e))?;
                 }
 
+                if let Some(alpha) = interpolate_alpha {
+                    let current = slain_core::frame_interpolation::RgbFrame::new(
+                        decoded.width,
+                        decoded.height,
+                        dst_frame.data.clone(),
+                    )?;
+                    if let Some(ref previous) = prev_frame {
+                        let _ = slain_core::frame_interpolation::interpolate_rgb(
+                            previous, &current, alpha,
+                        )?;
+                        interpolated_frames += 1;
+                    }
+                    prev_frame = Some(current);
+                }
+
                 last_pts_ms = packet.pts_ms.max(0) as u64;
                 decoded_frames += 1;
             }
@@ -1558,6 +1648,7 @@ fn decode_mkv_headless(path: &PathBuf, target_frames: u64) -> Result<HeadlessSta
 
     Ok(HeadlessStats {
         decoded_frames,
+        interpolated_frames,
         duration_ms: last_pts_ms,
     })
 }
