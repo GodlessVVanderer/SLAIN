@@ -185,6 +185,13 @@ pub struct Packet {
 
 pub mod mp4 {
     use super::*;
+    mod parser;
+    mod sample_table;
+    mod track;
+
+    use parser::{read_box_header, read_u16, read_u32, read_u64, read_u8, BoxHeader};
+    use sample_table::SampleTable;
+    use track::Track;
 
     /// MP4 atom/box types
     const FTYP: u32 = 0x66747970; // ftyp
@@ -231,28 +238,6 @@ pub mod mp4 {
         tracks: Vec<Track>,
         mdat_offset: u64,
         mdat_size: u64,
-    }
-
-    #[derive(Debug, Clone)]
-    struct Track {
-        id: u32,
-        stream_info: StreamInfo,
-        video_info: Option<VideoInfo>,
-        audio_info: Option<AudioInfo>,
-        timescale: u32,
-        duration: u64,
-        sample_table: SampleTable,
-        current_sample: usize,
-    }
-
-    #[derive(Debug, Clone, Default)]
-    struct SampleTable {
-        sample_sizes: Vec<u32>,
-        chunk_offsets: Vec<u64>,
-        sample_to_chunk: Vec<(u32, u32, u32)>, // first_chunk, samples_per_chunk, sample_desc_index
-        time_to_sample: Vec<(u32, u32)>,       // sample_count, sample_delta
-        keyframes: Vec<u32>,                   // Sample numbers that are keyframes
-        composition_offsets: Vec<(u32, i32)>,  // sample_count, offset
     }
 
     impl<R: Read + Seek> Mp4Demuxer<R> {
@@ -307,23 +292,10 @@ pub mod mp4 {
         }
 
         fn read_atom_header(&mut self) -> Result<(u64, u32), String> {
-            let mut buf = [0u8; 8];
-            self.reader
-                .read_exact(&mut buf)
-                .map_err(|e| format!("Read error: {}", e))?;
+            let header: BoxHeader = read_box_header(&mut self.reader)?;
+            let atom_type = u32::from_be_bytes(header.box_type);
 
-            let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64;
-            let atom_type = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
-
-            let actual_size = if size == 1 {
-                // 64-bit size
-                let mut buf64 = [0u8; 8];
-                self.reader
-                    .read_exact(&mut buf64)
-                    .map_err(|e| format!("Read error: {}", e))?;
-                u64::from_be_bytes(buf64)
-            } else if size == 0 {
-                // Extends to end of file
+            let actual_size = if header.size == 0 {
                 let current = self
                     .reader
                     .stream_position()
@@ -335,9 +307,9 @@ pub mod mp4 {
                 self.reader
                     .seek(SeekFrom::Start(current))
                     .map_err(|e| format!("Seek error: {}", e))?;
-                end - current + 8
+                end - current + header.header_size
             } else {
-                size
+                header.size
             };
 
             Ok((actual_size, atom_type))
@@ -351,35 +323,19 @@ pub mod mp4 {
         }
 
         fn read_u8(&mut self) -> Result<u8, String> {
-            let mut buf = [0u8; 1];
-            self.reader
-                .read_exact(&mut buf)
-                .map_err(|e| format!("Read error: {}", e))?;
-            Ok(buf[0])
+            read_u8(&mut self.reader)
         }
 
         fn read_u16(&mut self) -> Result<u16, String> {
-            let mut buf = [0u8; 2];
-            self.reader
-                .read_exact(&mut buf)
-                .map_err(|e| format!("Read error: {}", e))?;
-            Ok(u16::from_be_bytes(buf))
+            read_u16(&mut self.reader)
         }
 
         fn read_u32(&mut self) -> Result<u32, String> {
-            let mut buf = [0u8; 4];
-            self.reader
-                .read_exact(&mut buf)
-                .map_err(|e| format!("Read error: {}", e))?;
-            Ok(u32::from_be_bytes(buf))
+            read_u32(&mut self.reader)
         }
 
         fn read_u64(&mut self) -> Result<u64, String> {
-            let mut buf = [0u8; 8];
-            self.reader
-                .read_exact(&mut buf)
-                .map_err(|e| format!("Read error: {}", e))?;
-            Ok(u64::from_be_bytes(buf))
+            read_u64(&mut self.reader)
         }
 
         fn parse_moov(&mut self, size: u64) -> Result<(), String> {
