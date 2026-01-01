@@ -502,7 +502,8 @@ impl<B: BusSh4> Sh4<B> {
                 }
                 0xE => { // MOV.L @(R0,Rm),Rn
                     let addr = self.r[0].wrapping_add(self.get_reg(m));
-                    self.set_reg(n, self.bus.read32(addr));
+                    let val = self.bus.read32(addr);
+                    self.set_reg(n, val);
                     1
                 }
                 _ => 1,
@@ -543,7 +544,8 @@ impl<B: BusSh4> Sh4<B> {
                     }
                     0xE => { // MOV.L @(R0,Rm),Rn
                         let addr = self.r[0].wrapping_add(self.get_reg(m));
-                        self.set_reg(n, self.bus.read32(addr));
+                        let val = self.bus.read32(addr);
+                        self.set_reg(n, val);
                         1
                     }
                     0xF => { // MAC.L @Rm+,@Rn+
@@ -1107,7 +1109,8 @@ impl<B: BusSh4> Sh4<B> {
         let m = ((instr >> 4) & 0xF) as usize;
         let disp = (instr & 0xF) as u32 * 4;
         let addr = self.get_reg(m).wrapping_add(disp);
-        self.set_reg(n, self.bus.read32(addr));
+        let val = self.bus.read32(addr);
+        self.set_reg(n, val);
         1
     }
 
@@ -1128,7 +1131,9 @@ impl<B: BusSh4> Sh4<B> {
                 1
             }
             0x2 => { // MOV.L @Rm,Rn
-                self.set_reg(n, self.bus.read32(self.get_reg(m)));
+                let addr = self.get_reg(m);
+                let val = self.bus.read32(addr);
+                self.set_reg(n, val);
                 1
             }
             0x3 => { // MOV Rm,Rn
@@ -1152,7 +1157,9 @@ impl<B: BusSh4> Sh4<B> {
                 1
             }
             0x6 => { // MOV.L @Rm+,Rn
-                self.set_reg(n, self.bus.read32(self.get_reg(m)));
+                let addr = self.get_reg(m);
+                let val = self.bus.read32(addr);
+                self.set_reg(n, val);
                 if n != m {
                     self.set_reg(m, self.get_reg(m).wrapping_add(4));
                 }
@@ -1407,7 +1414,8 @@ impl<B: BusSh4> Sh4<B> {
         let n = ((instr >> 8) & 0xF) as usize;
         let disp = (instr & 0xFF) as u32 * 4;
         let addr = (self.pc & !3).wrapping_add(disp);
-        self.set_reg(n, self.bus.read32(addr));
+        let val = self.bus.read32(addr);
+        self.set_reg(n, val);
         1
     }
 

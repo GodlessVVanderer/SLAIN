@@ -840,7 +840,7 @@ impl VaapiDecoder {
 
     /// Flush decoder
     pub fn flush(&mut self) -> Vec<DecodedFrame> {
-        let frames = Vec::new();
+        let mut frames = Vec::new();
 
         #[cfg(target_os = "linux")]
         {

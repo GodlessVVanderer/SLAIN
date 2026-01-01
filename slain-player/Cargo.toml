@@ -13,6 +13,7 @@ path = "src/main.rs"
 [features]
 default = ["quad-pipeline"]
 quad-pipeline = ["slain-core/cuda", "slain-core/avisynth", "slain-core/vapoursynth", "slain-core/vulkan-compute"]
+audio = ["slain-core/audio"]
 
 [dependencies]
 # Core library

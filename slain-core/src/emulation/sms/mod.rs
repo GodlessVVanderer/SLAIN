@@ -13,6 +13,8 @@ pub use vdp::Vdp;
 pub use psg::Psg;
 pub use bus::SmsBus;
 
+use crate::emulation::cpu::Cpu;
+
 use std::path::Path;
 use crate::emulation::{EmulationResult, EmulationError};
 use crate::emulation::cpu::z80::Z80;

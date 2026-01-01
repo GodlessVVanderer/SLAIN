@@ -240,7 +240,7 @@ pub struct AtomisawaveFrontend {
     test_mode: bool,
 }
 
-impl AtomisaweFrontend {
+impl AtomisawaveFrontend {
     pub fn new() -> Self {
         let mut config = EmulatorConfig::default();
         config.target_fps = 60.0;
@@ -316,7 +316,7 @@ impl AtomisaweFrontend {
     }
 }
 
-impl Default for AtomisaweFrontend {
+impl Default for AtomisawaveFrontend {
     fn default() -> Self {
         Self::new()
     }

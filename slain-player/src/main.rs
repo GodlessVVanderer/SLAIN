@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 // Import from our core library - NOT rewriting
+#[cfg(feature = "audio")]
 use slain_core::audio::{audio_set_volume, AudioPlayer};
 use slain_core::avi_demux::AviDemuxer;
 use slain_core::bandwidth::window_monitor;
@@ -185,7 +186,9 @@ struct SlainApp {
     ffmpeg_available: bool,
 
     // Audio player from slain-core
+    #[cfg(feature = "audio")]
     audio_player: Option<AudioPlayer>,
+    #[cfg(feature = "audio")]
     audio_started: bool,
 
     // Pipeline selection
@@ -300,7 +303,9 @@ impl SlainApp {
             duration_ms: 0,
             volume: 1.0,
             ffmpeg_available,
+            #[cfg(feature = "audio")]
             audio_player: None,
+            #[cfg(feature = "audio")]
             audio_started: false,
             pipeline: default_pipeline,
             pipeline_manager: None,
@@ -352,6 +357,7 @@ impl SlainApp {
         )
     }
 
+    #[cfg(feature = "audio")]
     fn start_audio_if_needed(&mut self) {
         if self.audio_started {
             return;
@@ -372,6 +378,11 @@ impl SlainApp {
         self.audio_started = true;
     }
 
+    #[cfg(not(feature = "audio"))]
+    fn start_audio_if_needed(&mut self) {
+        // Audio disabled at compile time
+    }
+
     /// Open a media file using slain-core parsers
     fn open_file(&mut self, path: PathBuf) {
         tracing::info!("Opening: {:?}", path);
@@ -380,7 +391,10 @@ impl SlainApp {
         self.playback_start_time = None;
         self.last_displayed_pts = 0;
         self.current_time_ms = 0;
-        self.audio_started = false;
+        #[cfg(feature = "audio")]
+        {
+            self.audio_started = false;
+        }
 
         self.apply_pipeline_profile(Some(&path));
 
@@ -701,7 +715,10 @@ impl SlainApp {
 
     fn set_volume(&mut self, vol: f32) {
         self.volume = vol.clamp(0.0, 1.0);
-        let _ = audio_set_volume(self.volume);
+        #[cfg(feature = "audio")]
+        {
+            let _ = audio_set_volume(self.volume);
+        }
     }
 
     fn toggle_fullscreen(&mut self, ctx: &egui::Context) {

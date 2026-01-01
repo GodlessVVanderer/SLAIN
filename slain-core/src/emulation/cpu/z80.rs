@@ -96,7 +96,7 @@ pub struct Z80<B: BusZ80> {
     pub bus: B,
 
     // Cycle counter
-    cycles: u64,
+    pub cycles: u64,
 
     // Pending interrupt
     irq_pending: bool,

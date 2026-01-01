@@ -28,7 +28,7 @@ pub struct Mos6502<B: Bus6502> {
     /// Memory bus
     pub bus: B,
     /// Total cycles executed
-    cycles: u64,
+    pub cycles: u64,
     /// Interrupt pending
     irq_pending: bool,
     /// NMI pending

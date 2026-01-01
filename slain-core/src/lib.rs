@@ -57,6 +57,7 @@ pub mod shader_filters;
 // ============================================================================
 // Media Processing
 // ============================================================================
+#[cfg(feature = "audio")]
 pub mod audio;
 pub mod camera;
 pub mod filter_pipeline;

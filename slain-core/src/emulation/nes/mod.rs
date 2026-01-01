@@ -14,6 +14,9 @@ pub use ppu::Ppu;
 pub use apu::Apu;
 pub use bus::NesBus;
 
+use crate::emulation::cpu::Cpu;
+use crate::emulation::cpu::mos6502::Bus6502;
+
 use std::path::Path;
 use crate::emulation::{EmulationResult, EmulationError};
 use crate::emulation::cpu::mos6502::Mos6502;

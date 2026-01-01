@@ -3114,6 +3114,7 @@ impl Default for AudioDecoderConfig {
 }
 
 /// Audio decoder with REAL symphonia integration
+#[cfg(feature = "audio")]
 pub struct LavAudio {
     /// Codec
     codec: AudioCodec,
@@ -3129,6 +3130,7 @@ pub struct LavAudio {
     initialized: bool,
 }
 
+#[cfg(feature = "audio")]
 impl LavAudio {
     /// Create decoder for stream
     pub fn new(stream_info: AudioStreamInfo, config: AudioDecoderConfig) -> LavResult<Self> {
@@ -3475,6 +3477,7 @@ pub struct LavPipeline {
     /// Video decoder
     pub video: Option<LavVideo>,
     /// Audio decoder
+    #[cfg(feature = "audio")]
     pub audio: Option<LavAudio>,
 }
 
@@ -3500,6 +3503,7 @@ impl LavPipeline {
         };
 
         // Create audio decoder
+        #[cfg(feature = "audio")]
         let audio = if let Some(stream_idx) = splitter.audio_stream {
             if let Some(stream) = splitter
                 .info
@@ -3518,6 +3522,7 @@ impl LavPipeline {
         Ok(Self {
             splitter,
             video,
+            #[cfg(feature = "audio")]
             audio,
         })
     }
@@ -3534,6 +3539,7 @@ impl LavPipeline {
         if let Some(ref mut video) = self.video {
             video.reset();
         }
+        #[cfg(feature = "audio")]
         if let Some(ref mut audio) = self.audio {
             audio.reset();
         }
